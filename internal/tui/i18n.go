@@ -50,6 +50,7 @@ type Messages struct {
 	SysSkillLoadFailed   string // 含 %s, %s
 	ExitResumeHint       string // 退出提示:含 %s(完整 session id)
 	UpdateAvailable      string // footer banner:含 %s(最新版本)
+	UpdateCheckFailed    string // 更新检查失败(静默提示)
 	UpdateFailed         string
 	UpdateInstalled      string // 含 %s(已安装版本)
 
@@ -210,7 +211,8 @@ var zhCN = Messages{
 	SysSkillActivated:    "已激活 Skills: %s",
 	SysSkillLoadFailed:   "Skill 加载失败: %s — %s",
 	ExitResumeHint:       "会话已保存。下次恢复: dsh-tui --resume %s",
-	UpdateAvailable:      "⏎ 更新 %s(空输入按 Enter 安装)",
+	UpdateAvailable:      "⏎ 更新 %s",
+	UpdateCheckFailed:    "✗ 更新检查失败",
 	UpdateFailed:         "✗ 更新失败",
 	UpdateInstalled:      "✓ %s 已安装 · 重启生效",
 
@@ -361,7 +363,8 @@ var enUS = Messages{
 	SysSkillActivated:    "Skills activated: %s",
 	SysSkillLoadFailed:   "Skill load failed: %s — %s",
 	ExitResumeHint:       "Session saved. Resume later with: dsh-tui --resume %s",
-	UpdateAvailable:      "⏎ update %s (press Enter on empty input)",
+	UpdateAvailable:      "⏎ update %s",
+	UpdateCheckFailed:    "✗ update check failed",
 	UpdateFailed:         "✗ update failed",
 	UpdateInstalled:      "✓ %s installed · restart to apply",
 

@@ -511,7 +511,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case updateCheckMsg:
 		// 启动时后台检查:有新版本 → footer banner 提示;失败静默
 		if msg.err != "" {
-			m.noticeBanner = m.msg().UpdateFailed
+			m.noticeBanner = m.msg().UpdateCheckFailed
 		} else if msg.info != nil {
 			m.updateCache.Set(msg.info)
 			if msg.info.UpdateAvailable {
