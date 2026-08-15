@@ -16,16 +16,24 @@ cmd/
   dsh-tui/       CLI 入口(main:参数、会话创建/恢复、下行流订阅、回调接线)
   dsh-spike/     wire 协议 spike 验证工具(开发期探针)
 internal/
-  dsh/           wire 层:HTTP/WS 传输、RPC 编解码、帧结构(session/mux/host)、
-                 session.list/create/history、respond、downlink
+  dsh/           wire 层:HTTP unary RPC 客户端、WS 下行流、帧结构
+                 (client/rpc/events/downlink/respond/api_session/api_misc)
   tui/           渲染层(waveloom 移植)+ 事件投影:
-                 model/view/view_full   Bubble Tea model、按键分发、整体布局
-                 project                mux/host 帧 → 段落/投影/会话列表状态
-                 session               会话列表覆盖层(可见性规则对齐 dsh web)
-                 approval/question      审批与提问覆盖层(respond 决策)
-                 diffview/toolview      工具事件渲染(diff/read/terminal/search)
-                 tui_renderer           段落渲染(工具参数摘要/状态 suffix)
-                 i18n                   中英文案(Messages)
+                 app           导出入口(model 构造、Send*/Set* 注入)
+                 model/view     Bubble Tea model 结构、Init/Update 骨架与按键分发
+                 view_full      完整 View 布局(header/body/footer/HUD)
+                 project        mux/host 帧 → 段落/投影/会话列表状态
+                 session        会话列表覆盖层(可见性规则对齐 dsh web)
+                 approval       审批与提问覆盖层(respond 决策)
+                 diffview       宿主 view(渲染意图)解析与 diff 转换
+                 tui_renderer   段落渲染(工具参数摘要/状态 suffix/tool view)
+                 tui_overlay    覆盖层弹窗(主题/模型/locale/rewind)
+                 model_picker   模型选择器  ·  theme  主题切换
+                 focus          段落焦点模式  ·  input_history  输入历史/双击清空
+                 tui_picker     文件选择器(waveloom 移植,未接线)
+                 glamour        Glamour 样式定制  ·  tui_styles  语义色与样式
+                 compat/types   本地化渲染依赖类型(移植)
+                 i18n           中英文案(Messages)
 ```
 
 ## 开发
