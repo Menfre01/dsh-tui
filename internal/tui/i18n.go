@@ -216,8 +216,8 @@ var zhCN = Messages{
 
 	// Thought
 	ThoughtThinking:     "思考中...",
-	ThoughtComplete:     "▶ 思考完成 (%d tokens) · ⏎ 展开",
-	ThoughtExpandHint:   "··· ⏎ 展开 (%d tokens)",
+	ThoughtComplete:     "▶ 思考完成 · ⏎ 展开",
+	ThoughtExpandHint:   "··· ⏎ 展开",
 	ThoughtCollapseHint: "▼ ⏎ 折叠",
 
 	// Tool
@@ -363,8 +363,8 @@ var enUS = Messages{
 
 	// Thought
 	ThoughtThinking:     "Thinking...",
-	ThoughtComplete:     "▶ Thinking done (%d tokens) · ⏎ to expand",
-	ThoughtExpandHint:   "··· ⏎ to expand (%d tokens)",
+	ThoughtComplete:     "▶ Thinking done · ⏎ to expand",
+	ThoughtExpandHint:   "··· ⏎ to expand",
 	ThoughtCollapseHint: "▼ ⏎ to collapse",
 
 	// Tool

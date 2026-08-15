@@ -364,7 +364,8 @@ func (p *Projector) onAssistantMessage(ev *dsh.SessionEvent) {
 		})
 		p.markDirtyLast()
 	}
-	// finalize thought 段落
+	// finalize thought 段落。宿主可能发空内容 assistant/message(仅承载
+	// usage 结算):此时 reasoning 为空,仅收尾当前 thought 段落。
 	if p.thoughtIdx >= 0 && p.thoughtIdx < len(p.m.paras) {
 		p.thoughtPara().State = stateCollapsed
 		if reasoning.Len() > 0 {
@@ -373,11 +374,12 @@ func (p *Projector) onAssistantMessage(ev *dsh.SessionEvent) {
 		p.thoughtPara().renderDirty = true
 		p.thoughtIdx = -1
 	} else if reasoning.Len() > 0 {
-		p.m.paras = append(p.m.paras, Paragraph{
+		para := Paragraph{
 			Type:  paraThought,
 			State: stateCollapsed,
 			Text:  reasoning.String(),
-		})
+		}
+		p.m.paras = append(p.m.paras, para)
 		p.markDirtyLast()
 	}
 	if d.Usage != nil {

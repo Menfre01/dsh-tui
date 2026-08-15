@@ -95,7 +95,6 @@ type Paragraph struct {
 	SearchTotal     int
 
 	// Thought 专用字段
-	ThoughtTokens int // 完成后的 token 数
 
 	// System 专用字段
 	NotifKind systemNotifKind // 通知类型（仅 paraSystem 有效）
@@ -1425,8 +1424,7 @@ func renderThoughtPara(sb *strings.Builder, p *Paragraph, ctx ViewportCtx) {
 
 		if len(visible) == 0 {
 			sb.WriteString(prefixStr)
-			sb.WriteString(styleThoughtCollapsed.Render(
-				fmt.Sprintf(ctx.LC.ThoughtComplete, p.ThoughtTokens)))
+			sb.WriteString(styleThoughtCollapsed.Render(ctx.LC.ThoughtComplete))
 			sb.WriteString("\n")
 			return
 		}
@@ -1448,8 +1446,7 @@ func renderThoughtPara(sb *strings.Builder, p *Paragraph, ctx ViewportCtx) {
 		}
 		if totalWrapped > 2 {
 			sb.WriteString(indentStr)
-			sb.WriteString(styleThoughtExpandHint.Render(
-				fmt.Sprintf(ctx.LC.ThoughtExpandHint, p.ThoughtTokens)))
+			sb.WriteString(styleThoughtExpandHint.Render(ctx.LC.ThoughtExpandHint))
 			sb.WriteString("\n")
 		}
 
