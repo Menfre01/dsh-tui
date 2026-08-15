@@ -48,6 +48,7 @@ type Messages struct {
 	SysNewSessionCreated string
 	SysSkillActivated    string // 含 %s
 	SysSkillLoadFailed   string // 含 %s, %s
+	ExitResumeHint       string // 退出提示:含 %s(完整 session id)
 
 	// ── Loop done ─────────────────────────────────────────
 	LoopCompleted   string // 含 %s, %s, %s
@@ -205,6 +206,7 @@ var zhCN = Messages{
 	SysCommandFailed:     "命令执行失败: %v",
 	SysSkillActivated:    "已激活 Skills: %s",
 	SysSkillLoadFailed:   "Skill 加载失败: %s — %s",
+	ExitResumeHint:       "会话已保存。下次恢复: dsh-tui --resume %s",
 
 	// Loop
 	LoopCompleted:   "完成（%s, ↑%s, ↓%s）",
@@ -352,6 +354,7 @@ var enUS = Messages{
 	SysCommandFailed:     "Command failed: %v",
 	SysSkillActivated:    "Skills activated: %s",
 	SysSkillLoadFailed:   "Skill load failed: %s — %s",
+	ExitResumeHint:       "Session saved. Resume later with: dsh-tui --resume %s",
 
 	// Loop
 	LoopCompleted:   "Done (%s, ↑%s, ↓%s)",

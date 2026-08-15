@@ -584,3 +584,18 @@ func TestSessionListNoCwd(t *testing.T) {
 		t.Fatalf("第二行不应显示 id 前缀: %q", detailRow)
 	}
 }
+
+// TestExitResumeHint 验证退出提示文案含完整 session id(中英)。
+func TestExitResumeHint(t *testing.T) {
+	zh := MessagesZhCN()
+	en := MessagesEnUS()
+	sid := "session-abc123"
+	zhOut := fmt.Sprintf(zh.ExitResumeHint, sid)
+	enOut := fmt.Sprintf(en.ExitResumeHint, sid)
+	if !strings.Contains(zhOut, sid) || !strings.Contains(zhOut, "dsh-tui --resume") {
+		t.Fatalf("zh hint 异常: %q", zhOut)
+	}
+	if !strings.Contains(enOut, sid) || !strings.Contains(enOut, "dsh-tui --resume") {
+		t.Fatalf("en hint 异常: %q", enOut)
+	}
+}

@@ -295,6 +295,12 @@ func main() {
 		fmt.Fprintf(os.Stderr, "dsh-tui: %v\n", err)
 		os.Exit(1)
 	}
+	// 退出提示:打印完整 session id,方便下次 dsh-tui --resume 恢复
+	hintLC := lc
+	if hintLC == nil {
+		hintLC = tui.MessagesEnUS()
+	}
+	fmt.Fprintf(os.Stderr, "%s\n", fmt.Sprintf(hintLC.ExitResumeHint, sessionID))
 }
 
 func messagesForLocale(locale string) *tui.Messages {
