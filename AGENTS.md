@@ -3,6 +3,31 @@
 dsh-tui 是 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 的
 Go 终端客户端,渲染层移植自 [waveloom](https://github.com/Menfre01/waveloom)。
 
+## 项目概要
+
+- **语言**:Go 1.25+
+- **形态**:纯客户端(无守护进程),HTTP/WS 连接运行中的 dsh host(`dsh web`,默认
+  `http://127.0.0.1:3080`),unary RPC + 两条 receive-only 下行流
+- **TUI**:Bubble Tea v2 + Glamour Markdown 渲染 + Lipgloss 样式
+- **构建**:`make build` / `make test` / `make vet` / `make lint` / `make release`
+
+```
+cmd/
+  dsh-tui/       CLI 入口(main:参数、会话创建/恢复、下行流订阅、回调接线)
+  dsh-spike/     wire 协议 spike 验证工具(开发期探针)
+internal/
+  dsh/           wire 层:HTTP/WS 传输、RPC 编解码、帧结构(session/mux/host)、
+                 session.list/create/history、respond、downlink
+  tui/           渲染层(waveloom 移植)+ 事件投影:
+                 model/view/view_full   Bubble Tea model、按键分发、整体布局
+                 project                mux/host 帧 → 段落/投影/会话列表状态
+                 session               会话列表覆盖层(可见性规则对齐 dsh web)
+                 approval/question      审批与提问覆盖层(respond 决策)
+                 diffview/toolview      工具事件渲染(diff/read/terminal/search)
+                 tui_renderer           段落渲染(工具参数摘要/状态 suffix)
+                 i18n                   中英文案(Messages)
+```
+
 ## 开发
 
 - **构建/测试**:`make build && make test && make vet && make lint`(环境变量指向工作区缓存,
