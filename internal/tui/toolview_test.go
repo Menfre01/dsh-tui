@@ -899,25 +899,19 @@ func TestTokenUsageProjection(t *testing.T) {
 	}
 }
 
-// TestCtxBarPercentage 验证 ctx 进度条显示精确百分比(round),
-// 与 token 文本一致(57.2% → 57%,而非从格数猜 55%)。
-func TestCtxBarPercentage(t *testing.T) {
+// TestCtxBarDisplay 验证 ctx 进度条显示 token 文本(572K/1.0M),
+// 不显示百分比数字(格数即视觉近似)。
+func TestCtxBarDisplay(t *testing.T) {
 	m := NewModel(ModelConfig{Theme: "dark"})
 	_ = m.Init()
 	m.lastPromptTokens = 572000
 	m.contextLimit = 1000000
 	got := m.renderCtxBarCompact()
-	if !strings.Contains(got, "57%") {
-		t.Fatalf("ctx 应显示精确百分比 57%%: %q", got)
-	}
 	if !strings.Contains(got, "572K/1.0M") {
 		t.Fatalf("ctx 应显示 token 文本: %q", got)
 	}
-	// 临界值:57.6% → 58%(round)
-	m.lastPromptTokens = 576000
-	got = m.renderCtxBarCompact()
-	if !strings.Contains(got, "58%") {
-		t.Fatalf("round 边界: %q", got)
+	if strings.Contains(got, "%") {
+		t.Fatalf("ctx 不应显示百分比数字: %q", got)
 	}
 }
 

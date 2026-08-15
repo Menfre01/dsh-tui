@@ -658,11 +658,8 @@ func (m *model) renderCtxBarCompact() string {
 
 	tokenStr := tokenStyle.Render(fmt.Sprintf("%s/%s",
 		formatTokens(currentTokens), formatTokens(m.contextLimit)))
-	// 精确百分比文本(round):进度条是 5% 粒度近似(floor),百分比与文本
-	// 572K/1.0M 一致,避免用户从格数猜比例(57.2% 显示 57%)
-	pctStr := fmt.Sprintf("%d%%", int(pct+0.5))
 
-	return styleFooterLabel.Render("ctx") + " " + barStr + " " + pctStr + " " + tokenStr
+	return styleFooterLabel.Render("ctx") + " " + barStr + " " + tokenStr
 }
 
 // renderCacheRate 渲染缓存命中率。
