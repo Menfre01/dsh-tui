@@ -66,3 +66,9 @@ release:
 	done
 	@cd $(DIST_DIR) && shasum -a 256 *.tar.gz *.zip > checksums.txt
 	@echo "Done → $(DIST_DIR)/"
+
+.PHONY: homebrew-formula
+homebrew-formula:
+	@chmod +x .github/scripts/generate-formula.sh
+	@.github/scripts/generate-formula.sh > /tmp/dsh-tui.rb
+	@echo "Formula → /tmp/dsh-tui.rb"
