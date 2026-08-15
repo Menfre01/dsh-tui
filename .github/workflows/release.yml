@@ -25,12 +25,19 @@ jobs:
 
       - name: Extract changelog for version
         run: |
+          # 提取目标版本条目:遇到下一版本条目或文件末尾的英文锚点即停。
+          # 锚点统一在后面追加,避免最后条目被 EOF 提取导致锚点重复。
           awk -v ver="${{ github.ref_name }}" '
             BEGIN { found=0 }
             $0 ~ "^## \\[" ver "\\]" { found=1; print; next }
-            found && $0 ~ "^## \\[" { exit }
+            found && ($0 ~ "^## \\[" || $0 ~ "Changelog \\(English\\)") { exit }
             found { print }
           ' CHANGELOG.md > /tmp/release-notes.md
+          # 追加文件末尾的英文 changelog 锚点(条目自带 --- 分隔,这里只补锚点行)
+          if tail -3 CHANGELOG.md | grep -q 'Changelog (English)'; then
+            echo '' >> /tmp/release-notes.md
+            grep -A2 'Changelog (English)' CHANGELOG.md | tail -2 >> /tmp/release-notes.md
+          fi
 
       - name: Create GitHub Release
         run: |
