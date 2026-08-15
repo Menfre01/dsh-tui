@@ -205,6 +205,7 @@ func main() {
 				Blank:       s.Blank,
 				Cwd:         s.Cwd,
 				AgentPreset: s.AgentPreset,
+				Origin:      s.Origin,
 				Title:       title,
 			})
 			// resume/attach 时同步当前会话的运行状态:

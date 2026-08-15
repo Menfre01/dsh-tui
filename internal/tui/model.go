@@ -271,7 +271,21 @@ type SessionBrief struct {
 	Blank     bool
 	Cwd       string
 	AgentPreset string
+	Origin    string // subagent 子会话(dsh web 列表隐藏,仅作父目录展开)
 	Title     string // 宿主 title 投影(web 会话列表的主体显示)
+}
+
+// sessionVisible 对齐 dsh web 的列表可见性规则(dsh-client-ui-workspace):
+// 普通会话可见;blank 会话只有当前一个可见;subagent 子会话不显示
+// (web 用父会话目录树承载,终端无此层级,直接隐藏);归档会话不可见。
+func (m *model) sessionVisible(s SessionBrief) bool {
+	if s.Origin == "subagent" {
+		return false
+	}
+	if s.Blank && s.SessionID != m.sessionID {
+		return false
+	}
+	return true
 }
 
 // msg 返回当前语言的 Messages 实例,nil 时回退 enUS。

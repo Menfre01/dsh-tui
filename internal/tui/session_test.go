@@ -376,3 +376,55 @@ func TestDedupeSessions(t *testing.T) {
 		t.Fatal("dedupeSessions 第二次调用不应再有清理")
 	}
 }
+
+// TestSessionVisibility 验证 web 对齐的可见性过滤:
+// blank 会话只有当前一个可见,subagent 子会话隐藏,普通会话全部可见。
+func TestSessionVisibility(t *testing.T) {
+	m := NewModel(ModelConfig{Theme: "dark"})
+	_ = m.Init()
+	m.SetSessionInfo("session-cur", "deepseek-v4-flash")
+	m.SetSessions([]SessionBrief{
+		{SessionID: "session-a", Cwd: "/w/a"},                    // 普通
+		{SessionID: "session-b", Cwd: "/w/b", Blank: true},       // 非当前 blank → 隐藏
+		{SessionID: "session-cur", Cwd: "/w/c", Blank: true},     // 当前 blank → 可见
+		{SessionID: "session-d", Cwd: "/w/d", Origin: "subagent"}, // subagent → 隐藏
+		{SessionID: "session-e", Cwd: "/w/e", Blank: true},       // 非当前 blank → 隐藏
+	})
+	vis := m.visibleSessions()
+	if len(vis) != 2 {
+		t.Fatalf("visible = %d, want 2(a + 当前blank)", len(vis))
+	}
+	if vis[0].SessionID != "session-a" || vis[1].SessionID != "session-cur" {
+		t.Fatalf("unexpected visible list: %+v", vis)
+	}
+	// subagent 会话进入 sessions 但不显示
+	if len(m.sessions) != 5 {
+		t.Fatalf("sessions = %d, want 5(不过滤原始列表)", len(m.sessions))
+	}
+}
+
+// TestSessionVisibilityToggle 验证打开列表后选中索引仍指向可见项:
+// 全量列表带隐藏项时,visibleSessions 与 sessionListIdx 保持一致。
+func TestSessionVisibilityToggle(t *testing.T) {
+	m := NewModel(ModelConfig{Theme: "dark"})
+	_ = m.Init()
+	m.SetSessionInfo("session-cur", "deepseek-v4-flash")
+	m.sessions = []SessionBrief{
+		{SessionID: "session-1", Cwd: "/w/1", Blank: true},        // 隐藏
+		{SessionID: "session-cur", Cwd: "/w/c", Blank: true},      // 当前 blank
+		{SessionID: "session-2", Cwd: "/w/2", Origin: "subagent"}, // 隐藏
+	}
+	m.sessionListIdx = 1 // 指向隐藏的 subagent 项(索引需重新映射)
+	m.toggleSessionList() // 打开列表:触发去重 + 索引映射到可见列表
+	if !m.sessionListVisible() {
+		t.Fatal("session list should be visible after toggle")
+	}
+	vis := m.visibleSessions()
+	if len(vis) != 1 || vis[0].SessionID != "session-cur" {
+		t.Fatalf("visible = %+v, want [session-cur]", vis)
+	}
+	// 选中索引已映射到可见列表中的当前项
+	if m.sessionListIdx != 0 {
+		t.Fatalf("sessionListIdx = %d, want 0", m.sessionListIdx)
+	}
+}

@@ -210,8 +210,11 @@ func (p *Projector) ReplayHostFrame(frame dsh.ServerRequest) {
 			}
 		}
 		if idx >= 0 {
-			if h.Blank {
-				p.m.sessions[idx].Blank = true
+			// host 帧字段可能比 session.list 快照新:全覆盖(blank 显式值,
+			// 非空字段增量),保持与 web mergeSummary 语义一致。
+			p.m.sessions[idx].Blank = h.Blank
+			if h.Origin != "" {
+				p.m.sessions[idx].Origin = h.Origin
 			}
 			if h.Cwd != "" {
 				p.m.sessions[idx].Cwd = h.Cwd
@@ -223,6 +226,7 @@ func (p *Projector) ReplayHostFrame(frame dsh.ServerRequest) {
 			p.m.sessions = append(p.m.sessions, SessionBrief{
 				SessionID:  h.SessionID,
 				Blank:      h.Blank,
+				Origin:     h.Origin,
 				Cwd:        h.Cwd,
 				AgentPreset: h.AgentPreset,
 			})

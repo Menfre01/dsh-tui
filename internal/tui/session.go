@@ -29,6 +29,21 @@ func (m *model) toggleSessionList() {
 	// 兜底清理:任何路径残留的重复项在打开列表时按 SessionID 收敛
 	// (host 帧已去重,此处防御历史进程/上游返回的重复)。
 	m.dedupeSessions()
+	// 选中索引映射到可见列表:过滤(subagent/非当前 blank)后
+	// 原索引可能越界或指向隐藏项,改为保持同一会话的可见位置。
+	selected := ""
+	if m.sessionListIdx >= 0 && m.sessionListIdx < len(m.sessions) {
+		selected = m.sessions[m.sessionListIdx].SessionID
+	}
+	m.sessionListIdx = 0
+	if selected != "" {
+		for i, s := range m.visibleSessions() {
+			if s.SessionID == selected {
+				m.sessionListIdx = i
+				break
+			}
+		}
+	}
 	m.overlay = overlaySessionList
 	m.input.Blur()
 }
@@ -66,9 +81,23 @@ func (m *model) dedupeSessions() bool {
 	return true
 }
 
+// visibleSessions 返回按 web 可见性规则过滤后的会话列表
+// (subagent 隐藏、非当前 blank 隐藏)。导航/渲染统一用它,
+// 保证选中索引与显示一一对应。
+func (m *model) visibleSessions() []SessionBrief {
+	out := make([]SessionBrief, 0, len(m.sessions))
+	for _, s := range m.sessions {
+		if m.sessionVisible(s) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // handleSessionListKey 处理会话列表按键。返回 (handled, cmd)。
 func (m *model) handleSessionListKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 	keyStr := msg.String()
+	vis := m.visibleSessions()
 	switch keyStr {
 	case "ctrl+s":
 		m.toggleSessionList()
@@ -79,13 +108,13 @@ func (m *model) handleSessionListKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 		}
 		return true, nil
 	case "down":
-		if m.sessionListIdx < len(m.sessions)-1 {
+		if m.sessionListIdx < len(vis)-1 {
 			m.sessionListIdx++
 		}
 		return true, nil
 	case "enter":
-		if m.sessionListIdx >= 0 && m.sessionListIdx < len(m.sessions) {
-			target := m.sessions[m.sessionListIdx].SessionID
+		if m.sessionListIdx >= 0 && m.sessionListIdx < len(vis) {
+			target := vis[m.sessionListIdx].SessionID
 			m.overlay = overlayNone
 			m.input.Focus()
 			if m.onSwitchSession != nil {
@@ -95,8 +124,8 @@ func (m *model) handleSessionListKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 		return true, nil
 	case "y", "c":
 		// 复制选中会话的完整 id 到剪贴板(供 --resume 使用)
-		if m.sessionListIdx >= 0 && m.sessionListIdx < len(m.sessions) {
-			fullID := m.sessions[m.sessionListIdx].SessionID
+		if m.sessionListIdx >= 0 && m.sessionListIdx < len(vis) {
+			fullID := vis[m.sessionListIdx].SessionID
 			if err := clipboard.WriteAll(fullID); err == nil {
 				m.appendSystem("copied: "+fullID, notifInfo)
 			}
@@ -125,25 +154,26 @@ func (m *model) renderSessionListOverlay(boxWidth int) string {
 	lines = append(lines, title)
 	lines = append(lines, "")
 
-	if len(m.sessions) == 0 {
+	if len(m.visibleSessions()) == 0 {
 		lines = append(lines, styleOverlayBody.Render(lc.PickerNoResults))
 	} else {
 		// 固定高度窗口:最多可见 maxSessionListVisible 项,选中项滚动跟随
+		vis := m.visibleSessions()
 		const maxVisible = 8
 		start := 0
 		if m.sessionListIdx >= maxVisible {
 			start = m.sessionListIdx - maxVisible + 1
 		}
 		end := start + maxVisible
-		if end > len(m.sessions) {
-			end = len(m.sessions)
+		if end > len(vis) {
+			end = len(vis)
 		}
 		if start > 0 {
 			lines = append(lines, styleOverlayBody.Render(
 				lipgloss.NewStyle().Foreground(colorMuted).Render(fmt.Sprintf("  ↑ %d more", start))))
 		}
 		for i := start; i < end; i++ {
-			s := m.sessions[i]
+			s := vis[i]
 			marker := "  "
 			if i == m.sessionListIdx {
 				marker = "› "
@@ -173,12 +203,12 @@ func (m *model) renderSessionListOverlay(boxWidth int) string {
 			if i == m.sessionListIdx {
 				// 选中项下方显示完整 id(y 复制)
 				lines = append(lines, styleOverlayBody.Render(
-					lipgloss.NewStyle().Foreground(colorMuted).Render("   id: " + m.sessions[i].SessionID)))
+					lipgloss.NewStyle().Foreground(colorMuted).Render("   id: " + vis[i].SessionID)))
 			}
 		}
-		if end < len(m.sessions) {
+		if end < len(vis) {
 			lines = append(lines, styleOverlayBody.Render(
-				lipgloss.NewStyle().Foreground(colorMuted).Render(fmt.Sprintf("  ↓ %d more", len(m.sessions)-end))))
+				lipgloss.NewStyle().Foreground(colorMuted).Render(fmt.Sprintf("  ↓ %d more", len(vis)-end))))
 		}
 	}
 
