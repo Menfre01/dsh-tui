@@ -158,13 +158,9 @@ func (m *model) renderSessionListOverlay(boxWidth int) string {
 		}
 		for i := start; i < end; i++ {
 			s := vis[i]
-			marker := "  "
-			if i == m.sessionListIdx {
-				marker = "› "
-			}
 			running := ""
 			if s.Running {
-				running = styleFooterLatRed.Render("●")
+				running = styleFooterLatRed.Render("● ")
 			}
 			cwd := s.Cwd
 			if len(cwd) > 40 {
@@ -175,17 +171,21 @@ func (m *model) renderSessionListOverlay(boxWidth int) string {
 			if s.Title != "" {
 				label = truncateByDisplayWidth(s.Title, 30) + "  " + label
 			}
-			line := fmt.Sprintf("%s%s %s %s",
-				marker,
+			line := fmt.Sprintf("%s%s %s",
 				running,
-				styleOverlayBody.Render(label),
-				styleOverlayBody.Render(cwd))
+				label,
+				cwd)
+			// 选中样式与其他弹窗(主题/模型选择器)一致:
+			// 选中项 = 左侧 accent 边框 + 绿色前景 + 粗体;普通项 = 左 padding
+			styles := listItemStyles()
 			if i == m.sessionListIdx {
-				line = styleOverlayBody.Bold(true).Render(line)
+				line = styles.SelectedTitle.Render(line)
+			} else {
+				line = styles.NormalTitle.Render(line)
 			}
 			lines = append(lines, line)
 			if i == m.sessionListIdx {
-				// 选中项下方显示完整 id(y 复制)
+				// 选中项下方显示完整 id
 				lines = append(lines, styleOverlayBody.Render(
 					lipgloss.NewStyle().Foreground(colorMuted).Render("   id: " + vis[i].SessionID)))
 			}
