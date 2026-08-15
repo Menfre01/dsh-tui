@@ -88,7 +88,6 @@ func (m *model) buildModelPickerList() {
 	delegate.ShowDescription = false
 	delegate.SetSpacing(0)
 	delegate.Styles = listItemStyles()
-	m.modelPickerDelegate = &delegate
 
 	l := list.New(items, delegate, 0, height)
 	l.SetShowTitle(false)

@@ -13,7 +13,6 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/glamour/v2"
-	"charm.land/huh/v2"
 
 	"github.com/Menfre01/dsh-tui/internal/dsh"
 )
@@ -94,7 +93,7 @@ type rewindMsg struct {
 //
 // 从 waveloom cmd/waveloom/tui.go 移植的渲染字段子集;引擎字段
 // (llmClient/registry/guard/sandbox 等)已删除。dsh-tui 的事件投影层
-// (project.go)负责把 dsh wire 帧转成 paras/permReq 等字段。
+// (project.go)负责把 dsh wire 帧转成 paras 等字段。
 // ---------------------------------------------------------------------------
 
 type model struct {
@@ -131,19 +130,8 @@ type model struct {
 	// 覆盖层状态
 	overlay          Overlay
 	overlayAnimFrame int // 0=刚弹出, 1=过渡, 2=完成
-	permReq          *permissionReqMsg
-	permList         list.Model
-	permDelegate     *list.DefaultDelegate
 
-	questionReq            *questionReqMsg
-	questionIdx            int
-	questionAnswers        []QuestionResponse
-	questionForm           *huh.Form
-	questionFormMaxHeight  int
-	questionPendingOther   bool
-	questionPendingAnswers []string
-	questionFormInitCmd    tea.Cmd
-	questionFormIsOther    bool
+	permDelegate     *list.DefaultDelegate
 
 	// 主题选择器覆盖层
 	themeMode     string
@@ -152,7 +140,6 @@ type model struct {
 
 	// 模型选择器覆盖层
 	modelPickerList     list.Model
-	modelPickerDelegate *list.DefaultDelegate
 	modelPickerItems    []ModelChoice
 	effortPickerMode    bool // effort 面板模式(e 键进入)
 	effortPickerList    list.Model
@@ -202,8 +189,7 @@ type model struct {
 	hudCacheHit       int
 	hudCacheMiss      int
 	hudLatMs          int64
-	hudBalance        string // 余额显示字符串(预留;dsh 无余额概念)
-	hudBalanceAvail   bool
+
 
 	// rewind 状态(预留;dsh 无 rewind 能力)
 	rewindMessages    []rewindMsg
@@ -227,7 +213,6 @@ type model struct {
 
 	input               textarea.Model
 	otherInput          textinput.Model
-	otherInputVisStart  int
 	otherInputLastValue string
 
 	// 输入历史(↑↓ 导航,对齐 waveloom)
@@ -254,7 +239,7 @@ type model struct {
 	projectedTokens  int  // ctx bar 优先值(web 语义:projectedTokens ?? pressureTokens)
 	contextLimit   int    // 上下文窗口 token 上限
 	turnStartTime  time.Time // 本轮启动时间(延迟计算)
-	hudCost        float64 // 会话级累计费用(dsh 无费用,恒 0)
+
 
 	// dsh 连接回调(main 包注入)
 	running   bool // 会话是否运行中(agent busy)

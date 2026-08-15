@@ -665,21 +665,6 @@ func (m *model) renderCtxBarCompact() string {
 	return styleFooterLabel.Render("ctx") + " " + barStr + " " + pctStr + " " + tokenStr
 }
 
-// renderBalance 渲染余额信息。
-func (m *model) renderBalance() string {
-	label := styleFooterLabel.Render("bal")
-	if m.hudBalance == "" {
-		return label + " " + styleFooterValueMuted.Render("--")
-	}
-	var valStyle lipgloss.Style
-	if m.hudBalanceAvail {
-		valStyle = styleCacheGreen
-	} else {
-		valStyle = styleFooterLatRed
-	}
-	return label + " " + valStyle.Render(m.hudBalance)
-}
-
 // renderCacheRate 渲染缓存命中率。
 func (m *model) renderCacheRate() string {
 	label := styleFooterLabel.Render("cache")
@@ -701,18 +686,6 @@ func (m *model) renderCacheRate() string {
 	}
 
 	return label + " " + valStyle.Render(fmt.Sprintf("%d%%", pct))
-}
-
-// renderCost 渲染会话累计费用。dsh 无费用概念,恒 "--"。
-func (m *model) renderCost() string {
-	label := styleFooterLabel.Render("¥")
-	if m.hudCost == 0 {
-		return label + styleFooterValueMuted.Render("--")
-	}
-	if m.hudCost < 0.01 {
-		return label + styleFooterValueMuted.Render("<0.01")
-	}
-	return label + styleFooterValue.Render(fmt.Sprintf("%.2f", m.hudCost))
 }
 
 // renderLatency 渲染最近一次 loop 耗时(运行中实时计时,结束后显示最终值)。
