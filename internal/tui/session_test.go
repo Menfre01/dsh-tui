@@ -428,3 +428,56 @@ func TestSessionVisibilityToggle(t *testing.T) {
 		t.Fatalf("sessionListIdx = %d, want 0", m.sessionListIdx)
 	}
 }
+
+// TestSessionListSpacing 验证条目间空行:列表更疏朗(行高)。
+func TestSessionListSpacing(t *testing.T) {
+	m := NewModel(ModelConfig{Theme: "dark"})
+	_ = m.Init()
+	m.SetSessionInfo("session-cur", "deepseek-v4-flash")
+	m.SetSessions([]SessionBrief{
+		{SessionID: "session-a", Cwd: "/w/a", Title: "alpha"},
+		{SessionID: "session-b", Cwd: "/w/b", Title: "beta"},
+		{SessionID: "session-c", Cwd: "/w/c", Title: "gamma"},
+	})
+	out := m.renderSessionListOverlay(70)
+	// 三个条目都在
+	for _, title := range []string{"alpha", "beta", "gamma"} {
+		if !strings.Contains(out, title) {
+			t.Fatalf("缺少条目 %s: %q", title, out)
+		}
+	}
+	// 条目间应有空行:alpha 行与 beta 行不相邻(中间隔空行)
+	// 输出带 ANSI 与边框,取行内容(去转义后 strip)判定空行。
+	rows := strings.Split(out, "\n")
+	strip := func(s string) string {
+		var b strings.Builder
+		in := false
+		for _, r := range s {
+			if r == '\x1b' {
+				in = true
+				continue
+			}
+			if in {
+				if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+					in = false
+				}
+				continue
+			}
+			b.WriteRune(r)
+		}
+		return b.String()
+	}
+	var alphaRow, betaRow int
+	for i, row := range rows {
+		content := strings.TrimSpace(strip(row))
+		if strings.Contains(content, "alpha") {
+			alphaRow = i
+		}
+		if strings.Contains(content, "beta") {
+			betaRow = i
+		}
+	}
+	if betaRow-alphaRow < 2 {
+		t.Fatalf("条目间应有空行(alpha 行 %d,beta 行 %d): %q", alphaRow, betaRow, out)
+	}
+}

@@ -205,6 +205,10 @@ func (m *model) renderSessionListOverlay(boxWidth int) string {
 				lines = append(lines, styleOverlayBody.Render(
 					lipgloss.NewStyle().Foreground(colorMuted).Render("   id: " + vis[i].SessionID)))
 			}
+			// 条目间留空行:列表更疏朗(选中项后接 id 行再留空)
+			if i != end-1 {
+				lines = append(lines, "")
+			}
 		}
 		if end < len(vis) {
 			lines = append(lines, styleOverlayBody.Render(
