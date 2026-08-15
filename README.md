@@ -21,14 +21,6 @@ The rendering layer is ported from [waveloom](https://github.com/Menfre01/wavelo
 fully decoupled from the host — the host runs `dsh web` as a resident, and the web
 UI plus any number of dsh-tui windows share the same instance.
 
-<p align="center">
-  <img src="./assets/demo.gif" alt="dsh-tui demo (中文)" width="900"/>
-</p>
-
-<p align="center">
-  <img src="./assets/demo.en.gif" alt="dsh-tui demo" width="900"/>
-</p>
-
 ## Install
 
 ### One-command install script

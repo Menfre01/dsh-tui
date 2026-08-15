@@ -13,14 +13,6 @@
 **纯客户端架构**:dsh-tui 通过 HTTP/WS 连接 dsh 宿主进程,与宿主完全分离——
 宿主用 `dsh web` 常驻,web UI 与任意多个 dsh-tui 窗口共享同一实例。
 
-<p align="center">
-  <img src="../assets/demo.gif" alt="dsh-tui 演示(中文)" width="900"/>
-</p>
-
-<p align="center">
-  <img src="../assets/demo.en.gif" alt="dsh-tui 演示" width="900"/>
-</p>
-
 ## 安装
 
 ### 一键安装脚本
