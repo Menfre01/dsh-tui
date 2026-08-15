@@ -200,12 +200,33 @@ func (p *Projector) ReplayHostFrame(frame dsh.ServerRequest) {
 	}
 	switch h.Type {
 	case dsh.HostSessionAdded:
-		p.m.sessions = append(p.m.sessions, SessionBrief{
-			SessionID:  h.SessionID,
-			Blank:      h.Blank,
-			Cwd:        h.Cwd,
-			AgentPreset: h.AgentPreset,
-		})
+		// 去重:重连时宿主会重推已 attach 会话的 session-added 帧,
+		// 已存在则更新字段而非追加(否则列表累积重复项)
+		idx := -1
+		for i, s := range p.m.sessions {
+			if s.SessionID == h.SessionID {
+				idx = i
+				break
+			}
+		}
+		if idx >= 0 {
+			if h.Blank {
+				p.m.sessions[idx].Blank = true
+			}
+			if h.Cwd != "" {
+				p.m.sessions[idx].Cwd = h.Cwd
+			}
+			if h.AgentPreset != "" {
+				p.m.sessions[idx].AgentPreset = h.AgentPreset
+			}
+		} else {
+			p.m.sessions = append(p.m.sessions, SessionBrief{
+				SessionID:  h.SessionID,
+				Blank:      h.Blank,
+				Cwd:        h.Cwd,
+				AgentPreset: h.AgentPreset,
+			})
+		}
 	case dsh.HostSessionRemoved:
 		for i, s := range p.m.sessions {
 			if s.SessionID == h.SessionID {

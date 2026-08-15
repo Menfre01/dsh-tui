@@ -280,3 +280,36 @@ func TestSessionListWindow(t *testing.T) {
 		t.Fatalf("窗口应为 4..11: %q", out)
 	}
 }
+
+// TestSessionAddedDedup 验证 host/session-added 帧去重:
+// 重连重推的已存在会话更新字段而非追加(修复列表累积重复项)。
+func TestSessionAddedDedup(t *testing.T) {
+	m := NewModel(ModelConfig{Theme: "dark"})
+	_ = m.Init()
+	p := NewProjector(m)
+	m.AttachProjector(p)
+
+	frame := dsh.ServerRequest{
+		Method: "host/session-added",
+		Payload: mustJSON(map[string]any{
+			"type": "host/session-added", "sessionId": "sess-1", "cwd": "/w/a",
+		}),
+	}
+	p.ReplayHostFrame(frame)
+	p.ReplayHostFrame(frame) // 重连重推
+	p.ReplayHostFrame(frame)
+	if len(m.sessions) != 1 {
+		t.Fatalf("sessions = %d, want 1(去重)", len(m.sessions))
+	}
+	// 不同会话正常追加
+	frame2 := dsh.ServerRequest{
+		Method: "host/session-added",
+		Payload: mustJSON(map[string]any{
+			"type": "host/session-added", "sessionId": "sess-2", "cwd": "/w/b",
+		}),
+	}
+	p.ReplayHostFrame(frame2)
+	if len(m.sessions) != 2 {
+		t.Fatalf("sessions = %d, want 2", len(m.sessions))
+	}
+}
