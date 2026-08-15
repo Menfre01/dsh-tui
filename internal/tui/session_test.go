@@ -20,7 +20,7 @@ func TestSessionListNavigation(t *testing.T) {
 		{SessionID: "sess-ccc", Cwd: "/work/c"},
 	}
 
-	// ctrl+s 打开列表
+	// 打开列表(空闲 ←;这里直接设状态测导航)
 	handled, _ := m.handleSessionListKey(tea.KeyPressMsg{})
 	_ = handled // 按键构造依赖内部字段,这里直接测状态机
 	m.overlay = overlaySessionList

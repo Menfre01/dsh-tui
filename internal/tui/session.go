@@ -11,7 +11,7 @@ import (
 // ---------------------------------------------------------------------------
 // session.go — 会话列表与切换(阶段 3 MVP)
 //
-// 交互: Ctrl+S 打开/关闭会话列表覆盖层;↑/↓ 导航;Enter 切换;Esc 取消。
+// 交互: 空闲态 ← 打开/关闭会话列表覆盖层;↑/↓ 导航;Enter 切换;Esc 取消。
 // 数据源: main 启动时 session.list + host/ 帧增量(project.go 维护)。
 // ---------------------------------------------------------------------------
 
@@ -98,9 +98,6 @@ func (m *model) handleSessionListKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 	keyStr := msg.String()
 	vis := m.visibleSessions()
 	switch keyStr {
-	case "ctrl+s":
-		m.toggleSessionList()
-		return true, nil
 	case "left":
 		// ← 关闭(与空闲态打开对称)
 		m.toggleSessionList()

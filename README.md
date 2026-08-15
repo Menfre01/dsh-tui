@@ -107,7 +107,6 @@ dsh web                          # terminal 1
 | Key | Action |
 |---|---|
 | `←` (idle, empty input) | Session list: ↑↓ navigate · Enter switch · Esc close |
-| Ctrl+S | Session list (compat; some terminals eat Ctrl+S as XOFF) |
 | Ctrl+G | Theme: ↑↓ pick auto/dark/light/colorblind · Enter apply · Esc close (auto re-queries terminal background; 5s polling) |
 | Ctrl+M | Model: ↑↓ pick · Enter select (with default effort) · **E effort panel** · Esc |
 

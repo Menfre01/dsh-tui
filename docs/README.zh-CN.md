@@ -98,7 +98,6 @@ dsh web                          # 终端 1
 | 按键 | 功能 |
 |---|---|
 | `←`(空闲且输入为空) | 会话列表:↑↓ 导航 · Enter 切换 · Esc 取消 |
-| Ctrl+S | 会话列表(兼容入口;部分终端 Ctrl+S 被 XOFF 截获) |
 | Ctrl+G | 主题:↑↓ 选 auto/dark/light/colorblind · Enter 应用 · Esc 关闭(auto 同步重查终端背景,5s 轮询跟随) |
 | Ctrl+M | 模型:↑↓ 选模型 · Enter 选择(带默认 effort) · **E 进 effort 面板** · Esc |
 

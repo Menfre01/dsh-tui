@@ -5,7 +5,7 @@
 //	dsh-tui [--url URL] ...      连接运行中的 dsh(默认 http://127.0.0.1:3080)
 //	dsh-tui --resume <id>        恢复已有 session
 //
-// 连接后 Enter 发送、Esc 中断、Ctrl+S 会话列表、Ctrl+G 主题、Ctrl+M 模型。
+// 连接后 Enter 发送、Esc 中断、空闲 ← 会话列表、Ctrl+G 主题、Ctrl+M 模型。
 package main
 
 import (
