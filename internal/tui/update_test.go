@@ -126,3 +126,26 @@ func TestUpdateCache(t *testing.T) {
 		t.Fatalf("缓存读写异常: info=%v done=%v", info, done)
 	}
 }
+
+// TestIsUpdateAvailable 验证语义化版本比较:
+// dirty/commit 后缀不误报;同主版本无更新;新主版本有更新。
+func TestIsUpdateAvailable(t *testing.T) {
+	cases := []struct {
+		current, latest string
+		want            bool
+	}{
+		{"v0.0.1", "v0.0.1", false},                 // release 构建,同版本
+		{"v0.0.1-7-gbd571cc-dirty", "v0.0.1", false}, // 本地 dirty 构建,同主版本 → 不误报
+		{"v0.0.1", "v0.0.2", true},                  // patch 更新
+		{"v0.0.1", "v0.1.0", true},                  // minor 更新
+		{"v0.0.1", "v1.0.0", true},                  // major 更新
+		{"v0.1.0", "v0.0.9", false},                 // 本地比 release 新 → 无更新
+		{"dev", "v0.0.1", false},                    // dev 版本不比较
+		{"", "v0.0.1", false},                       // 空版本
+	}
+	for _, c := range cases {
+		if got := isUpdateAvailable(c.current, c.latest); got != c.want {
+			t.Errorf("isUpdateAvailable(%q, %q) = %v, want %v", c.current, c.latest, got, c.want)
+		}
+	}
+}

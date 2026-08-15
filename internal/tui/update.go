@@ -72,15 +72,71 @@ func checkLatestRelease(ctx context.Context, url, currentVersion string) (*Updat
 		tag = location[idx+1:]
 	}
 
-	latest := strings.TrimPrefix(tag, "v")
-	current := strings.TrimPrefix(currentVersion, "v")
-
 	return &UpdateInfo{
 		CurrentVersion:  currentVersion,
 		LatestVersion:   tag,
-		UpdateAvailable: latest != "" && current != "" && latest != current,
+		UpdateAvailable: isUpdateAvailable(currentVersion, tag),
 		URL:             location,
 	}, nil
+}
+
+// isUpdateAvailable 语义化比较当前版本与最新 tag。
+// git describe 注入的版本可能带后缀(如 v0.0.1-7-gbd571cc-dirty),
+// 只比较 vX.Y.Z 主版本段,避免本地 dirty 构建误报更新。
+func isUpdateAvailable(currentVersion, latestTag string) bool {
+	cur := semverSegment(currentVersion)
+	lat := semverSegment(latestTag)
+	if cur == "" || lat == "" {
+		return false
+	}
+	return compareSemver(lat, cur) > 0
+}
+
+// semverSegment 提取 "vX.Y.Z" 主版本段(去掉 v 前缀与 - 后缀)。
+// 非数字开头(dev、"" 等)返回空,视为不可比较。
+func semverSegment(v string) string {
+	v = strings.TrimPrefix(v, "v")
+	if idx := strings.IndexByte(v, '-'); idx >= 0 {
+		v = v[:idx]
+	}
+	if v == "" {
+		return ""
+	}
+	if v[0] < '0' || v[0] > '9' {
+		return ""
+	}
+	return v
+}
+
+// compareSemver 比较 X.Y.Z 三段数字;left > right 返回正数,相等返回 0。
+func compareSemver(left, right string) int {
+	lp := strings.Split(left, ".")
+	rp := strings.Split(right, ".")
+	for i := 0; i < 3; i++ {
+		lv, rv := 0, 0
+		if i < len(lp) {
+			lv = atoiOrZero(lp[i])
+		}
+		if i < len(rp) {
+			rv = atoiOrZero(rp[i])
+		}
+		if lv != rv {
+			return lv - rv
+		}
+	}
+	return 0
+}
+
+// atoiOrZero 解析数字,失败返回 0。
+func atoiOrZero(s string) int {
+	n := 0
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			break
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n
 }
 
 // CheckForUpdateAsync 在后台 goroutine 执行更新检查,结果通过 channel 返回。
