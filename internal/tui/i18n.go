@@ -105,7 +105,6 @@ type Messages struct {
 	KeyDeny        string
 	KeyCancel      string
 	KeyToggle      string
-	KeyCopyID      string
 	KeySend        string
 	KeyInterrupt   string
 	KeyQuit        string

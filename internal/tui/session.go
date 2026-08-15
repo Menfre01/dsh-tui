@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/atotto/clipboard"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
@@ -122,15 +121,6 @@ func (m *model) handleSessionListKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 			}
 		}
 		return true, nil
-	case "y", "c":
-		// 复制选中会话的完整 id 到剪贴板(供 --resume 使用)
-		if m.sessionListIdx >= 0 && m.sessionListIdx < len(vis) {
-			fullID := vis[m.sessionListIdx].SessionID
-			if err := clipboard.WriteAll(fullID); err == nil {
-				m.appendSystem("copied: "+fullID, notifInfo)
-			}
-		}
-		return true, nil
 	case "n":
 		m.overlay = overlayNone
 		m.input.Focus()
@@ -218,7 +208,7 @@ func (m *model) renderSessionListOverlay(boxWidth int) string {
 
 	lines = append(lines, "")
 	lines = append(lines, styleOverlayBody.Render(
-		"[↑/↓] "+lc.KeyNav+"    [Enter] "+lc.KeyConfirm+"    [N] "+lc.PickerNewSession+"    [Y] "+lc.KeyCopyID+"    [Esc] "+lc.KeyCancel))
+		"[↑/↓] "+lc.KeyNav+"    [Enter] "+lc.KeyConfirm+"    [N] "+lc.PickerNewSession+"    [Esc] "+lc.KeyCancel))
 	return renderOverlayBox(boxWidth, m.overlayAnimFrame, strings.Join(lines, "\n"))
 }
 
