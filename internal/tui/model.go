@@ -271,6 +271,7 @@ type SessionBrief struct {
 	Blank     bool
 	Cwd       string
 	AgentPreset string
+	Title     string // 宿主 title 投影(web 会话列表的主体显示)
 }
 
 // msg 返回当前语言的 Messages 实例,nil 时回退 enUS。

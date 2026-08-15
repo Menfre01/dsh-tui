@@ -185,12 +185,27 @@ func main() {
 	if list, err := client.ListSessions(ctx); err == nil {
 		briefs := make([]tui.SessionBrief, 0, len(list.Items))
 		for _, s := range list.Items {
+			title := ""
+			if len(s.Projections) > 0 {
+				var proj struct {
+					Values map[string]json.RawMessage `json:"values"`
+				}
+				if err := json.Unmarshal(s.Projections, &proj); err == nil {
+					if raw, ok := proj.Values["title"]; ok {
+						var t string
+						if json.Unmarshal(raw, &t) == nil {
+							title = t
+						}
+					}
+				}
+			}
 			briefs = append(briefs, tui.SessionBrief{
 				SessionID:   s.SessionID,
 				Running:     s.Running,
 				Blank:       s.Blank,
 				Cwd:         s.Cwd,
 				AgentPreset: s.AgentPreset,
+				Title:       title,
 			})
 			// resume/attach 时同步当前会话的运行状态:
 			// 否则会话繁忙时 Esc 中断失效(running 恒 false)

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -215,5 +216,28 @@ func TestGapReplayAppends(t *testing.T) {
 	}
 	if um.paras[1].Text != "gap message" {
 		t.Fatalf("gap para = %+v", um.paras[1])
+	}
+}
+
+// TestSessionListShowsTitle 验证会话列表显示宿主 title(与 web 对齐)。
+func TestSessionListShowsTitle(t *testing.T) {
+	m := NewModel(ModelConfig{Theme: "dark"})
+	_ = m.Init()
+	m.sessions = []SessionBrief{
+		{SessionID: "session-ba61dc5b-96de-4601-8cd5-c9975cb70a9f", Cwd: "/work/a", Title: "你是谁"},
+		{SessionID: "session-38eed8b1-1d08-447d-9a22-ebe7bb20ebdf", Cwd: "/work/b"},
+	}
+	m.sessionListIdx = 0
+	m.width = 80
+	out := m.renderSessionListOverlay(70)
+	if !strings.Contains(out, "你是谁") {
+		t.Fatalf("列表应显示 title: %q", out)
+	}
+	if !strings.Contains(out, "ba61dc5b") {
+		t.Fatalf("title 后应有短 id: %q", out)
+	}
+	// 无 title 的会话:直接显示短 id
+	if !strings.Contains(out, "38eed8b1") {
+		t.Fatalf("无 title 会话应显示短 id: %q", out)
 	}
 }

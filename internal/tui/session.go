@@ -105,10 +105,15 @@ func (m *model) renderSessionListOverlay(boxWidth int) string {
 			if len(cwd) > 40 {
 				cwd = "…" + cwd[len(cwd)-39:]
 			}
+			// 与 dsh web 对齐:会话列表主体显示 title(投影),短 id + cwd 辅助
+			label := shortSessionID(s.SessionID)
+			if s.Title != "" {
+				label = truncateByDisplayWidth(s.Title, 30) + "  " + label
+			}
 			line := fmt.Sprintf("%s%s %s %s",
 				marker,
 				running,
-				styleOverlayBody.Render(shortSessionID(s.SessionID)),
+				styleOverlayBody.Render(label),
 				styleOverlayBody.Render(cwd))
 			if i == m.sessionListIdx {
 				line = styleOverlayBody.Bold(true).Render(line)
