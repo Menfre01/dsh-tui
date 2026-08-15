@@ -7,11 +7,37 @@ Go 终端客户端,渲染层移植自 [waveloom](https://github.com/Menfre01/wav
 
 - **构建/测试**:`make build && make test && make vet && make lint`(环境变量指向工作区缓存,
   仓库 `.git` 状态特殊,构建需 `-buildvcs=false`)
+- **禁止直接调用 `go build` / `go install`**,统一使用 make;直接调用会缺
+  `GOMODCACHE/GOPATH/GOCACHE` 工作区缓存与 `-buildvcs=false`,构建失败或污染系统缓存
 - **协议漂移防护**:wire 层全部隔离在 `internal/dsh`,渲染/投影在 `internal/tui`;
   宿主协议变更时先对照 upstream 源码(`@deepseek-ai/*` 包)再改 wire 层
 - **新增工具渲染**:宿主新增工具时,`formatToolArgs`(参数摘要)与 `toolSuffix`
   (状态 suffix)必须覆盖,避免摘要行显示原始 JSON
 - **测试**:投影/交互/渲染路径的修复必须带回归测试
+
+## 编码规范
+
+- **跨平台兼容**:发布面向 Linux / Darwin / Windows 三平台:
+  - 文件系统操作优先使用 `filepath.WalkDir`、`os.ReadDir` 等标准库,禁止直接调用外部命令(如 `find`、`ls`)
+  - 路径拼接必须使用 `filepath.Join`,禁止硬编码 `/` 或 `\`
+  - 外部 API 调用前确认第三方包是否声明跨平台支持,必要时用 `runtime.GOOS` 条件编译
+
+## 代码审查
+
+- 完成较大的代码改动(涉及 3+ 文件或 50+ 行变更)后,**自动**启动代码审查,
+  审查维度:逻辑正确性、跨平台兼容、边界条件、安全风险
+- 审查完成后将结果直接反馈给用户,无需用户主动要求
+
+## Bug 修复回归防护
+
+- 每个 Bug 修复**必须**附加回归防护:
+  - **可测**:编写 `TestRegression_<简述>`,断言命中根因
+  - **不可测**:修复点上方加 `// REGRESSION: <根因>。无法单测:<理由>`
+- 同一代码区域累积 ≥3 条 → 视为脆弱模块,优先重构而非继续修补
+
+## 文档规范
+
+- 架构/流程/数据模型绘图优先使用 Mermaid
 
 ## 提交策略
 
