@@ -12,29 +12,23 @@ Go 终端客户端,渲染层移植自 [waveloom](https://github.com/Menfre01/wav
 - **构建**:`make build` / `make test` / `make vet` / `make lint` / `make release`
 
 ```
-cmd/
-  dsh-tui/       CLI 入口(main:参数、会话创建/恢复、下行流订阅、回调接线)
-  dsh-spike/     wire 协议 spike 验证工具(开发期探针)
-internal/
-  dsh/           wire 层:HTTP unary RPC 客户端、WS 下行流、帧结构
-                 (client/rpc/events/downlink/respond/api_session/api_misc)
-  tui/           渲染层(waveloom 移植)+ 事件投影:
-                 app           导出入口(model 构造、Send*/Set* 注入)
-                 model/view     Bubble Tea model 结构、Init/Update 骨架与按键分发
-                 view_full      完整 View 布局(header/body/footer/HUD)
-                 project        mux/host 帧 → 段落/投影/会话列表状态
-                 session        会话列表覆盖层(可见性规则对齐 dsh web)
-                 approval       审批与提问覆盖层(respond 决策)
-                 diffview       宿主 view(渲染意图)解析与 diff 转换
-                 tui_renderer   段落渲染(工具参数摘要/状态 suffix/tool view)
-                 tui_overlay    覆盖层弹窗(主题/模型/locale/rewind)
-                 model_picker   模型选择器  ·  theme  主题切换
-                 focus          段落焦点模式  ·  input_history  输入历史/双击清空
-                 tui_picker     文件选择器(waveloom 移植,未接线)
-                 glamour        Glamour 样式定制  ·  tui_styles  语义色与样式
-                 compat/types   本地化渲染依赖类型(移植)
-                 i18n           中英文案(Messages)
+dsh-tui/
+├── cmd/
+│   ├── dsh-tui/     # CLI 入口(参数、会话创建/恢复、下行流订阅、回调接线)
+│   └── dsh-spike/   # wire 协议 spike 验证工具(开发期探针)
+└── internal/
+    ├── dsh/         # wire 层:HTTP unary RPC + WS downlink + 帧结构 + session RPC
+    └── tui/         # 渲染层(waveloom 移植)+ 事件投影(单包,职责见下)
 ```
+
+`internal/tui` 单包内按职责划分文件组:
+
+- **模型/骨架**:`model.go`(结构)、`view.go`(Init/Update 按键分发)、`view_full.go`(整体布局)、`app.go`(导出入口)
+- **投影**:`project.go`(mux/host 帧 → 段落/会话状态)
+- **覆盖层**:`session.go`(会话列表)、`approval.go`(审批/提问)、`tui_overlay.go`(主题/模型/locale)、`model_picker.go`、`tui_picker.go`(文件选择器,未接线)
+- **渲染**:`tui_renderer.go`(段落/tool view)、`diffview.go`(diff 转换)、`glamour.go`(Markdown 样式)、`tui_styles.go`(语义色)、`compat.go`/`types.go`(移植类型)
+- **交互**:`focus.go`(段落焦点)、`input_history.go`(历史/双击清空)、`theme.go`
+- **文案**:`i18n.go`(中英文案)、`version.go`
 
 ## 开发
 
