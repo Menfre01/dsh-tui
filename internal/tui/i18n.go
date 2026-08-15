@@ -1,0 +1,928 @@
+package tui
+
+import (
+	"os"
+	"strings"
+)
+
+// ---------------------------------------------------------------------------
+// Locale 类型
+// ---------------------------------------------------------------------------
+
+// Locale 表示界面语言。
+type Locale string
+
+const (
+	LocaleZhCN Locale = "zh-CN"
+	LocaleEnUS Locale = "en-US"
+)
+
+// ---------------------------------------------------------------------------
+// Messages — 所有可翻译的 TUI 文案
+// ---------------------------------------------------------------------------
+
+// Messages 聚合所有 TUI 界面文案。通过 Locale 索引获取对应语言的实例。
+// 命名规范：按功能区域分组，用点号连接（如 Input.Placeholder）。
+// 带 % 格式化动词的字段保留 Go fmt 占位符，调用方负责 Sprintf。
+type Messages struct {
+	// ── Input ──────────────────────────────────────────────
+	InputPlaceholder          string
+	InputOtherPlaceholder     string
+	InputAgentRunning         string
+	InputFocusModePlaceholder string
+	InputPlanModePlaceholder  string
+
+	// ── Welcome ────────────────────────────────────────────
+	WelcomeGuide     string // 空状态时 body 区域的首次引导面板（多行）
+	NewContentHint   string // 向上滚动时新内容到达的提示
+	SearchTruncatedHint string // search 结果截断提示(含 %d)
+	QueueDockHint    string // 排队消息指示(含 %d)
+	TerminalTooSmall string // 终端高度 < 10 行时的提示
+
+	// ── System notifications ──────────────────────────────
+	SysCompactionDone    string
+	SysContextHardLimit  string
+	SysSummaryFailed     string
+	SysUnknownCommand    string // 含 %s
+	SysCommandFailed     string // 含 %v
+	SysNewSessionCreated string
+	SysSkillActivated    string // 含 %s
+	SysSkillLoadFailed   string // 含 %s, %s
+
+	// ── Loop done ─────────────────────────────────────────
+	LoopCompleted   string // 含 %s, %s, %s
+	LoopMaxTurns    string // 含 %d, %s, %s, %s
+	LoopAborted     string // 含 %s
+	LoopToolTimeout string // 含 %s, %s, %s
+	LoopModelError  string // 含 %s, %v
+	LoopToolFatal   string // 含 %s, %v
+
+	// ── Update ────────────────────────────────────────────
+
+	// ── Thought ───────────────────────────────────────────
+	ThoughtThinking     string
+	ThoughtComplete     string // 含 %d
+	ThoughtExpandHint   string // 含 %d
+	ThoughtCollapseHint string
+
+	// ── Tool ──────────────────────────────────────────────
+	ToolNQuestions       string // 含 %d
+	ToolQuestionDeclined string
+	ToolTruncated        string
+	ToolTruncatedLines   string // 含 %d
+	ToolExpandAllHint    string
+	ToolCollapseHint     string
+
+	// ── Permission overlay ───────────────────────────────
+	PermRequired string
+	PermReason   string
+	PermAllow    string
+	PermAllowAll string
+	PermDeny     string
+
+	// ── Question overlay ─────────────────────────────────
+	QuestionOtherOption string
+	QuestionOtherPlaceholder string
+	KeyBack              string
+
+	// ── Theme / Model picker ─────────────────────────────
+	PickerSelectTheme  string
+	PickerSelectModel  string
+	PickerSelectEffort string
+	PickerSelectLocale string
+	PickerSelectProvider string
+	PickerThemeAuto    string
+	PickerSelectSession string // 会话列表标题
+	PickerNewSession   string // 会话列表新建操作
+
+	// ── File picker ──────────────────────────────────────
+	PickerScanning  string
+	PickerNoResults string
+
+	// ── Key bindings ─────────────────────────────────────
+	KeyNav         string
+	KeyConfirm     string
+	KeyDeny        string
+	KeyCancel      string
+	KeyToggle      string
+	KeyCopyID      string
+	KeySend        string
+	KeyInterrupt   string
+	KeyQuit        string
+	KeyFocusNext   string
+	KeyFocusPrev   string
+	KeyScrollUp    string
+	KeyScrollDown  string
+	KeyPageUp      string
+	KeyPageDown    string
+	KeyToggleTheme string
+	KeyJumpBottom  string
+	KeyPicker      string
+	KeyPaste       string
+	KeyHelp        string
+	KeyHelpTitle   string // ? 帮助 overlay 标题
+	KeyHistoryUp   string
+	KeyHistoryDown string
+
+	// ── Focus separator ──────────────────────────────────
+	FocusSeparatorHint string
+
+	// ── Plan mode ─────────────────────────────────────────
+	PlanEnterTitle   string
+	PlanEnterDesc1   string
+	PlanEnterDesc2   string
+	PlanEnterConfirm string
+	PlanEnterCancel  string
+	PlanExitTitle    string
+	PlanExitApprove  string
+	PlanExitReject   string
+
+	// ── Header ───────────────────────────────────────────
+	HeaderSession string
+
+	// ── Setup wizard ─────────────────────────────────────
+	SetupOverwriteWarn   string
+	SetupStepLocale      string
+	SetupStepProvider    string
+	SetupStepAPIKey      string
+	SetupStepModel       string
+	SetupStepSubModel    string
+	SetupStepBaseURL     string
+	SetupStepTheme       string
+	SetupAPIKeyEmptyError string
+	SetupAPIKeyInvalidFmt string // 含 %v
+	SetupProviderOther   string
+	SetupBaseURLDesc     string
+	SetupSubModelDesc    string // 含 %s — 子模型推荐值
+	SetupDoneTitle       string
+	SetupDoneConfigSaved string
+	SetupDoneReady       string
+	SetupConfirmTitle    string
+	SetupConfirmPrompt   string
+	SetupHelpHint        string
+	SetupSummaryTheme    string
+	SetupSummaryLanguage string
+	SetupSummaryProvider string
+	SetupSummaryModel    string
+	SetupSummarySubModel string
+	SetupSummaryBaseURL  string
+	SetupSummaryAPIKey   string
+	SetupConfirmSave     string
+
+	SetupStepContextLimit    string
+	SetupContextLimitDesc    string
+	SetupSummaryContextLimit string
+	SetupConfirmBack     string
+
+	// ── Slash commands ────────────────────────────────────
+	SlashNewDescription        string
+	SlashNewCreated            string
+	SlashNewFailed             string // 含 %v
+	SlashModelDescription      string
+	SlashModelListFailed       string // 含 %v
+	SlashModelListFailedNoNet  string
+	SlashModelUnknown          string // 含 %s
+	SlashModelConfigReadFailed string // 含 %v
+	SlashModelConfigSaveFailed string // 含 %v
+	SlashModelSwitched         string // 含 %s
+	SlashModelProPlanAnchorMissing string // proplan 需要 model 与 sub_model 锚点
+	SlashThemeDescription      string
+	SlashLocaleDescription     string
+	SlashHelpDescription       string
+	SlashHelpText              string
+
+	// ── /provider ──
+	ProviderDescription       string
+	ProviderList              string // 含 %s, %s
+	ProviderAvailable         string // 含 %s
+	ProviderUnknown           string // 含 %s
+	ProviderSwitched          string // 含 %s, %s
+	ProviderNoProfiles        string
+	ProviderNotConfigured     string
+	ProviderConfigReadFailed  string // 含 %v
+	ProviderConfigSaveFailed  string // 含 %v
+	ProviderModelNotice       string // 含 %s
+
+	// ── CLI help ──────────────────────────────────────────
+	HelpUsageText string
+
+	// ── CLI stdout (--continue / --resume / ls / oneshot) ──
+	CLIContinueSession string // 含 %s
+	CLINoRecentSession string
+	CLIResumedSession  string // 含 %s
+	CLILsNoRecent      string
+	CLILsHeader        string
+	CLILsRestoreHint   string
+
+	// ── One-shot mode ──────────────────────────────────────
+	OneShotHeader string // 含 %s (cwd)
+	OneShotError  string // 含 %v
+	OneShotFooter string // 含 %s (model), %s (turns), %s (elapsed), %s (↑input), %s (↓output)
+
+	// ── Session save on exit ──────────────────────────────
+	SessionSaved      string // 含 %s
+	SessionResumeHint string // 含 %s
+
+	// ── Todo panel ────────────────────────────────────────
+	TodoTitle        string // 含 %d
+	TodoHiddenCount  string // 含 %d
+	TodoDoneCount    string // 含 %d
+	TodoInProgCount  string // 含 %d
+	TodoPendingCount string // 含 %d
+
+	// ── Setup locale options ──────────────────────────────
+	SetupLocaleZhCNLabel string
+	SetupLocaleEnUSLabel string
+
+	// ── Subagent suffix ──────────────────────────────────
+	SubagentTurnsFmt string // 含 %d，如 "%d轮" / "%d turns"
+
+	// ── Rewind overlay ────────────────────────────────────
+	RewindTitle            string // "Rewind"
+	RewindPrompt           string // "Restore the code and/or conversation to the point before…"
+	RewindNothingToRestore string // "Nothing to rewind to yet."
+	RewindCurrent          string // "(current)"
+	RewindConfirmTitle     string // "Rewind"
+	RewindConfirmPrompt    string // "Confirm you want to restore to the point before you sent this message:"
+	RewindOptionBoth       string // "Restore code and conversation"
+	RewindOptionConv       string // "Restore conversation only"
+	RewindOptionCode       string // "Restore code only"
+	RewindOptionNeverMind  string // "Never mind"
+	RewindWarning          string // "Rewinding does not affect files edited manually or via bash."
+	RewindRestoring        string // "Restoring…"
+	RewindFailed           string // "Failed to restore: %v"
+	RewindNoCodeChanges    string // "No code changes"
+	RewindFilesChanged     string // "%d files changed"
+	RewindSlashDescription string // "Rewind code and/or conversation to a previous point"
+}
+
+// ---------------------------------------------------------------------------
+// 语言实例
+// ---------------------------------------------------------------------------
+
+var zhCN = Messages{
+	// Input
+	InputPlaceholder:          "输入消息, ⏎ 发送 · Ctrl+G 主题 · Esc 中断",
+	InputOtherPlaceholder:     "输入自定义答案...",
+	InputAgentRunning:         "Agent 执行中... Esc 中断",
+	InputFocusModePlaceholder: "段落已聚焦 · ⏎ 展开/折叠 · Esc 回到输入",
+	InputPlanModePlaceholder:  "[Plan] 输入消息, ⏎ 发送 · Shift+Tab 退出",
+
+	// Welcome
+	WelcomeGuide: "" +
+		"欢迎使用 Waveloom — DeepSeek 原生终端编码代理\n" +
+		"\n" +
+		"  /  命令面板 — model、theme、locale、help、rewind\n" +
+		"  @  引用文件 — @main.go 将文件内容加入上下文\n" +
+		"  ⏎  发送消息 — 让我编写、重构或调试代码\n" +
+		"\n" +
+		"试试: \"介绍一下这个项目\" 或 \"帮我写个单元测试\"\n" +
+		"\n" +
+		"开始输入即可对话 —",
+	NewContentHint:   "↓ 新内容 (Ctrl+E 跳回底部)",
+	SearchTruncatedHint: "… 结果被截断,共 %d 条",
+	QueueDockHint:    "⏳ %d 条排队:",
+	TerminalTooSmall: "终端窗口太小，请调大后重试（最少 10 行）",
+
+	// System
+	SysCompactionDone:    "压缩完成。",
+	SysContextHardLimit:  "上下文已满（98%）。/reset 重建。",
+	SysSummaryFailed:     "摘要连续失败。/reset 重建。",
+	SysNewSessionCreated: "新 session 已创建。",
+	SysUnknownCommand:    "未知命令: %s。输入框输入 / 查看可用命令。",
+	SysCommandFailed:     "命令执行失败: %v",
+	SysSkillActivated:    "已激活 Skills: %s",
+	SysSkillLoadFailed:   "Skill 加载失败: %s — %s",
+
+	// Loop
+	LoopCompleted:   "完成（%s, ↑%s, ↓%s）",
+	LoopMaxTurns:    "已达最大轮次（%d轮, %s, ↑%s, ↓%s）。继续对话。",
+	LoopAborted:     "已中断（%s）",
+	LoopToolTimeout: "工具执行超时（%s %s）%s",
+	LoopModelError:  "Model error (%s, %v)",
+	LoopToolFatal:   "Tool error (%s, %v)",
+
+	// Thought
+	ThoughtThinking:     "思考中...",
+	ThoughtComplete:     "▶ 思考完成 (%d tokens) · ⏎ 展开",
+	ThoughtExpandHint:   "··· ⏎ 展开 (%d tokens)",
+	ThoughtCollapseHint: "▼ ⏎ 折叠",
+
+	// Tool
+	ToolNQuestions:       "(%d 问)",
+	ToolQuestionDeclined: "(declined)",
+	ToolTruncated:        "··· (truncated)",
+	ToolTruncatedLines:   "... (truncated to %d lines)",
+	ToolExpandAllHint:    "··· ⏎ 展开",
+	ToolCollapseHint:     "▼ ⏎ 折叠",
+
+	// Permission
+	PermRequired: "▲ Permission Required",
+	PermReason:   "Reason: ",
+	PermAllow:    "Allow (本次放行)",
+	PermAllowAll: "Always Allow (记住，不再询问)",
+	PermDeny:     "Deny (本次拒绝)",
+
+	// Question
+	QuestionOtherOption: "Other...",
+	QuestionOtherPlaceholder: "输入自定义答案…",
+	KeyBack:              "返回",
+
+	// Picker
+	PickerSelectTheme:  "▲ 选择主题",
+	PickerSelectModel:  "▲ 选择模型",
+	PickerSelectEffort: "选择档位 -",
+	PickerSelectLocale: "▲ 选择界面语言",
+	PickerSelectSession: "选择会话",
+	PickerNewSession:   "新建会话",
+	PickerSelectProvider: "▲ 选择 Provider",
+	PickerThemeAuto:    "Auto（自动检测终端背景色）",
+	PickerScanning:     "正在扫描文件...",
+	PickerNoResults:    "无匹配文件",
+
+	// Key bindings
+	KeyNav:         "导航",
+	KeyConfirm:     "确认",
+	KeyDeny:        "拒绝",
+	KeyCancel:      "取消",
+	KeyToggle:      "勾选",
+	KeySend:        "发送消息",
+	KeyInterrupt:   "中断 agent loop",
+	KeyQuit:        "双击退出",
+	KeyFocusNext:   "聚焦下一个可交互段落",
+	KeyFocusPrev:   "聚焦上一个可交互段落",
+	KeyScrollUp:    "输入历史/向上滚动",
+	KeyScrollDown:  "输入历史/向下滚动",
+	KeyPageUp:      "向上翻页",
+	KeyPageDown:    "向下翻页",
+	KeyToggleTheme: "切换主题 (dark/light/auto)",
+	KeyJumpBottom:  "跳到底部",
+	KeyPicker:      "选择文件/目录",
+	KeyPaste:       "粘贴",
+	KeyHelp:        "快捷键",
+	KeyHelpTitle:   "快捷键帮助",
+	KeyHistoryUp:   "向上导航输入历史",
+	KeyHistoryDown: "向下导航输入历史",
+
+	// Focus separator
+	FocusSeparatorHint: " ◆ 段落已聚焦 · ⏎ 展开/折叠 · Esc 退出 ◆ ",
+
+	// Plan mode
+	PlanEnterTitle:   "进入 Plan 模式？",
+	PlanEnterDesc1:   "Agent 将探索代码库并设计实现方案，",
+	PlanEnterDesc2:   "期间无法编辑源文件，方案完成后需你审批。",
+	PlanEnterConfirm: "确认",
+	PlanEnterCancel:  "取消",
+	PlanExitTitle:    "Plan 审批",
+	PlanExitApprove:  "批准",
+	PlanExitReject:   "拒绝，继续修改",
+
+	// Header
+	HeaderSession: "session: ",
+
+	// Setup wizard
+	SetupOverwriteWarn:   "继续操作将覆盖当前的 api_key。",
+	SetupStepLocale:      "Step %d/%d — 界面语言",
+	SetupStepProvider:    "Step %d/%d — 选择 Provider",
+	SetupStepAPIKey:      "Step %d/%d — API Key",
+	SetupStepModel:       "Step %d/%d — 模型名称",
+	SetupStepSubModel:    "Step %d/%d — 子模型",
+	SetupStepBaseURL:     "Step %d/%d — API 端点",
+	SetupStepTheme:       "Step %d/%d — 主题",
+	SetupProviderOther:   "Other (OpenAI-compatible)",
+	SetupSubModelDesc:    "%s (Recommended) — 子模型默认模型",
+	SetupBaseURLDesc:     "兼容 OpenAI API 的服务地址，如 http://localhost:11434/v1",
+	SetupAPIKeyEmptyError: "API Key 不能为空",
+	SetupAPIKeyInvalidFmt: "API Key 验证失败: %v",
+	SetupDoneTitle:       "设置完成！",
+	SetupDoneConfigSaved: "配置已保存到 %s",
+	SetupDoneReady:       "现在可以运行 waveloom 进入交互模式了。",
+	SetupConfirmTitle:    "确认配置",
+	SetupConfirmPrompt:   "确认以上配置？",
+	SetupHelpHint:        "↑↓ 导航   ⏎ 确认   Esc 回退   Ctrl+C×2 退出",
+	SetupSummaryTheme:    "主题",
+	SetupSummaryLanguage: "语言",
+	SetupSummaryProvider: "Provider",
+	SetupSummaryModel:    "模型",
+	SetupSummarySubModel: "子模型",
+
+	SetupStepContextLimit:    "Step %d/%d — 上下文窗口",
+	SetupContextLimitDesc:    "模型上下文窗口上限(token)。默认 1M 适配 DeepSeek V4,切换其他模型建议按实际情况调整,防止上下文溢出或过早压缩。",
+	SetupSummaryContextLimit: "上下文窗口",
+	SetupSummaryBaseURL:  "API 端点",
+	SetupSummaryAPIKey:   "API Key",
+	SetupConfirmSave:     "Save  — 确认保存",
+	SetupConfirmBack:     "Back  — 回退修改",
+
+	// Slash commands
+	SlashNewDescription:        "创建全新 session",
+	SlashNewCreated:            "新 session 已创建。",
+	SlashNewFailed:             "创建新 session 失败: %v",
+	SlashModelDescription:      "显示或切换模型",
+	SlashModelListFailed:       "无法获取模型列表: %v",
+	SlashModelListFailedNoNet:  "无法获取模型列表，请检查网络连接后重试。",
+	SlashModelUnknown:          "未知模型: %s。输入 /model 查看可用列表。",
+	SlashModelConfigReadFailed: "读取配置失败: %v",
+	SlashModelConfigSaveFailed: "保存配置失败: %v",
+	SlashModelSwitched:         "模型已切换为 %s。",
+	SlashModelProPlanAnchorMissing: "proplan 需要配置 model 与 sub_model 锚点(settings.json llm 段)。",
+	SlashThemeDescription:      "选择主题(Auto / Dark / Light / ColorBlind)",
+	SlashLocaleDescription:     "切换语言（zh-CN / en-US）",
+	SlashHelpDescription:       "显示所有可用命令",
+	SlashHelpText: `使用技巧:
+
+  —— 以下仅在空闲时生效 ——
+  输入 /         查看并补全命令（↑↓ 导航，⏎ 确认，Tab 自动补全）
+  输入 @         引用文件（↑↓ 导航，⏎ 确认，Tab 深入目录）
+  ↑↓              滚动页面
+  Ctrl+P / Ctrl+N 浏览输入历史
+  Tab / Shift+Tab 段落间导航，⏎ 展开 / 折叠
+  Esc（双击）      清空输入框
+  exit            退出程序
+
+  可用命令：在输入框输入 / 即可弹出命令列表。
+
+   —— 以下任意时刻生效 ——
+   Ctrl+G          循环切换主题（dark → light → colorblind → auto）
+   ?               快捷键帮助 overlay
+   Ctrl+E / End    跳到底部
+   Ctrl+C×2        双击退出
+   PgUp / PgDn     上下翻页
+   Esc（运行中）     中断当前 Agent 执行
+
+  会话结束时 session 自动保存，使用 waveloom --continue 恢复最近会话。
+  单次执行：waveloom "解释这段代码"`,
+
+	// ── /provider ──
+	ProviderDescription:       "显示或切换 LLM Provider（kimi / deepseek / openai）",
+	ProviderList:              "当前 Provider: %s（模型: %s）",
+	ProviderAvailable:         "可用 Provider:\n%s",
+	ProviderUnknown:           "未知 Provider: %s。可用: kimi, deepseek, openai",
+	ProviderSwitched:          "Provider 已从 %s 切换到 %s。",
+	ProviderNoProfiles:        "配置文件未设置 provider profiles。请先通过设置向导配置。",
+	ProviderNotConfigured:     "(未配置)",
+	ProviderConfigReadFailed:  "读取配置失败: %v",
+	ProviderConfigSaveFailed:  "保存配置失败: %v",
+	ProviderModelNotice:       "当前模型: %s。如有需要请执行 /model 切换。",
+
+	// CLI help
+	HelpUsageText: `Waveloom — Code Agent CLI
+
+用法:
+  waveloom                     交互式 TUI 模式
+  waveloom ls                  列出最近 sessions
+  waveloom mcp                 MCP Server 管理
+  waveloom acp                 以 ACP Agent 模式运行 (JSON-RPC over stdio)
+  waveloom setup               首次设置向导
+  waveloom completion <shell>  输出 shell 补全脚本 (bash/zsh/fish)
+  waveloom --help              显示帮助
+  waveloom --version           显示版本号
+
+选项:
+  --settings PATH         配置文件路径（项目级；全局 ~/.waveloom/settings.json 自动合并）
+  --version               显示版本号
+  --theme MODE            主题模式: auto（默认）/ dark / light / darkcolorblind / lightcolorblind
+                          auto 自动检测终端背景色
+  --locale LANG           界面语言: auto（默认）/ zh-CN / en-US
+                          auto 从 LANG 环境变量自动检测
+  --log-level            日志级别: debug / info（默认）/ warn / error
+  --max-turns N           最大 turn 数（0=无限制）
+  --system-prompt TEXT    系统提示词
+  --context-limit N       上下文窗口 token 上限，支持 1M / 200k / 1048576 等格式（默认: 1M）
+  --bypass-permissions    跳过权限检查(TUI 交互确认;one-shot/ACP 默认启用)
+  --no-sandbox            显式关闭沙箱(one-shot/ACP 默认激活;Docker 等已隔离环境可关闭)
+  --tool-timeout D         单个工具执行超时(Go Duration 格式,如 10m / 600s / 0s,0 禁用,默认 10m)
+  --provider NAME         LLM Provider（kimi / deepseek / openai），覆盖配置文件并查找 profiles 中匹配配置
+  --resume ID             恢复指定 session ID 的对话
+  --continue              恢复最近一个 session 的对话
+
+配置文件（settings.json）:
+  ~/.waveloom/settings.json  用户全局配置（安全基线）
+  .waveloom/settings.json    项目级配置（字段覆盖全局，权限同键覆盖全局）
+  --settings PATH            显式指定项目配置文件
+
+  llm.api_key              API Key（必填；为空时回退 LLM_API_KEY 环境变量）
+  llm.provider              Provider（kimi / deepseek / openai，默认 deepseek）
+  llm.profiles              多 Provider 配置（以 provider 名为键；当前 provider 的 api_key / model / base_url 覆盖顶层同名字段）
+  llm.model                 模型名称
+  llm.base_url              API 端点
+  llm.timeout               请求超时（如 "600s"）
+  llm.extra_params          额外参数（如 temperature, max_tokens, thinking 等）
+
+  permissions.allow[]       直接允许的规则
+  permissions.deny[]        直接拒绝的规则
+  permissions.ask[]         需用户确认的规则
+                           格式: "tool_name" 或 "tool_name(pattern)"
+
+环境变量:
+  LLM_API_KEY             API Key（settings.json 未设置时的回退）
+`,
+
+	// CLI stdout
+	CLIContinueSession:      "继续最近 session: %s\n",
+	CLINoRecentSession:      "没有找到最近的 session，将创建新 session\n",
+	CLIResumedSession:       "已恢复 session: %s\n",
+	CLILsNoRecent:           "没有找到最近的 session。",
+	CLILsHeader:             "最近 sessions:",
+	CLILsRestoreHint:        "恢复: waveloom --resume <id>  或  waveloom --continue",
+
+	// One-shot mode
+	OneShotHeader: "🤖 Waveloom (单次模式) — %s\n\n",
+	OneShotFooter: "\n(%s, %s, %s, ↑%s, ↓%s)\n",
+
+	// Session save
+	SessionSaved:      "已保存 session: %s\n",
+	SessionResumeHint: "  恢复对话: waveloom --resume %s\n",
+
+	// Todo panel
+	TodoTitle:        "Todo — %d/%d 项",
+	TodoHiddenCount:  "%d 项隐藏",
+	TodoDoneCount:    "%d 完成",
+	TodoInProgCount:  "%d 进行中",
+	TodoPendingCount: "%d 等待",
+
+	// Setup locale options
+	SetupLocaleZhCNLabel: "简体中文  (zh-CN)",
+	SetupLocaleEnUSLabel: "English   (en-US)",
+
+	// Subagent suffix
+	SubagentTurnsFmt: "%d轮",
+
+	// Rewind
+	RewindTitle:            "时间回溯",
+	RewindPrompt:           "将代码和/或对话回退到…",
+	RewindNothingToRestore: "还没有可回退的内容。",
+	RewindCurrent:          "(当前)",
+	RewindConfirmTitle:     "时间回溯",
+	RewindConfirmPrompt:    "确认要回退到发送这条消息之前吗：",
+	RewindOptionBoth:       "回退代码和对话",
+	RewindOptionConv:       "仅回退对话",
+	RewindOptionCode:       "仅回退代码",
+	RewindOptionNeverMind:  "取消",
+	RewindWarning:          "回退不会影响手动编辑或通过 bash 修改的文件。",
+	RewindRestoring:        "回退中…",
+	RewindFailed:           "回退失败: %v",
+	RewindNoCodeChanges:    "无代码变更",
+	RewindFilesChanged:     "%d 个文件变更",
+	RewindSlashDescription: "回退代码和/或对话到之前的某个节点",
+}
+
+var enUS = Messages{
+	InputPlaceholder:          "Type a message, ⏎ send · Ctrl+G theme · Esc interrupt",
+	InputOtherPlaceholder:     "Type custom answer...",
+	InputAgentRunning:         "Agent running... Esc to interrupt",
+	InputFocusModePlaceholder: "Paragraph focused · ⏎ expand/collapse · Esc back to input",
+	InputPlanModePlaceholder:  "[Plan] Type a message, ⏎ to send · Shift+Tab to exit",
+
+	// Welcome
+	WelcomeGuide: "" +
+		"Welcome to Waveloom — your DeepSeek-native terminal coding agent\n" +
+		"\n" +
+		"  /  Commands — model, theme, locale, help, rewind\n" +
+		"  @  Reference files — @main.go to add context\n" +
+		"  ⏎  Send message — ask me to write, refactor, or debug code\n" +
+		"\n" +
+		"Try: \"Explain this project\" or \"Add a unit test for ...\"\n" +
+		"\n" +
+		"Start typing to begin —",
+	NewContentHint:   "↓ New content (Ctrl+E to jump back)",
+	SearchTruncatedHint: "… results truncated, %d total",
+	QueueDockHint:    "⏳ %d queued:",
+	TerminalTooSmall: "Terminal too small, please resize (min 10 rows)",
+
+	// System
+	SysCompactionDone:    "Compaction complete.",
+	SysContextHardLimit:  "Context full (98%). /reset to rebuild.",
+	SysSummaryFailed:     "Summary failed repeatedly. /reset to rebuild.",
+	SysNewSessionCreated: "New session created.",
+	SysUnknownCommand:    "Unknown command: %s. Type /help to see available commands.",
+	SysCommandFailed:     "Command failed: %v",
+	SysSkillActivated:    "Skills activated: %s",
+	SysSkillLoadFailed:   "Skill load failed: %s — %s",
+
+	// Loop
+	LoopCompleted:   "Done (%s, ↑%s, ↓%s)",
+	LoopMaxTurns:    "Max turns reached (%d turns, %s, ↑%s, ↓%s). Continue.",
+	LoopAborted:     "Aborted (%s)",
+	LoopToolTimeout: "Tool timeout (%s %s) %s",
+	LoopModelError:  "Model error (%s, %v)",
+	LoopToolFatal:   "Tool error (%s, %v)",
+
+	// Thought
+	ThoughtThinking:     "Thinking...",
+	ThoughtComplete:     "▶ Thinking done (%d tokens) · ⏎ to expand",
+	ThoughtExpandHint:   "··· ⏎ to expand (%d tokens)",
+	ThoughtCollapseHint: "▼ ⏎ to collapse",
+
+	// Tool
+	ToolNQuestions:       "(%d questions)",
+	ToolQuestionDeclined: "(declined)",
+	ToolTruncated:        "··· (truncated)",
+	ToolTruncatedLines:   "... (truncated to %d lines)",
+	ToolExpandAllHint:    "··· ⏎ to expand",
+	ToolCollapseHint:     "▼ ⏎ to collapse",
+
+	// Permission
+	PermRequired: "▲ Permission Required",
+	PermReason:   "Reason: ",
+	PermAllow:    "Allow (this time)",
+	PermAllowAll: "Always Allow (remember)",
+	PermDeny:     "Deny (this time)",
+
+	// Question
+	QuestionOtherOption: "Other...",
+	QuestionOtherPlaceholder: "Type a custom answer…",
+	KeyBack:              "返回",
+
+	// Picker
+	PickerSelectTheme:  "▲ Select Theme",
+	PickerSelectModel:  "▲ Select Model",
+	PickerSelectEffort: "Select effort -",
+	PickerSelectLocale: "▲ Select Language",
+	PickerSelectSession: "Select Session",
+	PickerNewSession:   "New Session",
+	PickerSelectProvider: "▲ Select Provider",
+	PickerThemeAuto:    "Auto (detect terminal background)",
+	PickerScanning:     "Scanning files...",
+	PickerNoResults:    "No files found",
+
+	// Key bindings
+	KeyNav:         "Navigate",
+	KeyConfirm:     "Confirm",
+	KeyDeny:        "Deny",
+	KeyCancel:      "Cancel",
+	KeyToggle:      "Toggle",
+	KeySend:        "Send message",
+	KeyInterrupt:   "Interrupt agent loop",
+	KeyQuit:        "Double-tap to quit",
+	KeyFocusNext:   "Focus next interactive paragraph",
+	KeyFocusPrev:   "Focus previous interactive paragraph",
+	KeyScrollUp:    "History/Scroll up",
+	KeyScrollDown:  "History/Scroll down",
+	KeyPageUp:      "Page up",
+	KeyPageDown:    "Page down",
+	KeyToggleTheme: "Toggle theme (dark/light/auto)",
+	KeyJumpBottom:  "Jump to bottom",
+	KeyPicker:      "Pick file/directory",
+	KeyPaste:       "Paste",
+	KeyHelp:        "Shortcuts",
+	KeyHelpTitle:   "Keyboard Shortcuts",
+	KeyHistoryUp:   "Navigate input history up",
+	KeyHistoryDown: "Navigate input history down",
+
+	// Focus separator
+	FocusSeparatorHint: " ◆ Paragraph focused · ⏎ expand/collapse · Esc exit ◆ ",
+
+	// Plan mode
+	PlanEnterTitle:   "Enter plan mode?",
+	PlanEnterDesc1:   "Agent will explore the codebase and design an approach,",
+	PlanEnterDesc2:   "source edits are blocked until you approve the plan.",
+	PlanEnterConfirm: "Confirm",
+	PlanEnterCancel:  "Cancel",
+	PlanExitTitle:    "Plan Approval",
+	PlanExitApprove:  "Approve",
+	PlanExitReject:   "Reject, continue editing",
+
+	// Header
+	HeaderSession: "session: ",
+
+	// Setup wizard
+	SetupOverwriteWarn:   "This will overwrite the existing api_key.",
+	SetupStepLocale:      "Step %d/%d — Language",
+	SetupStepProvider:    "Step %d/%d — Select Provider",
+	SetupStepAPIKey:      "Step %d/%d — API Key",
+	SetupStepModel:       "Step %d/%d — Model Name",
+	SetupStepSubModel:    "Step %d/%d — Sub Model",
+	SetupStepBaseURL:     "Step %d/%d — API Endpoint",
+	SetupStepTheme:       "Step %d/%d — Theme",
+	SetupProviderOther:   "Other (OpenAI-compatible)",
+	SetupBaseURLDesc:     "OpenAI-compatible API endpoint, e.g. http://localhost:11434/v1",
+	SetupSubModelDesc:    "%s (Recommended) — default sub model",
+	SetupAPIKeyEmptyError: "API Key cannot be empty",
+	SetupAPIKeyInvalidFmt: "API key validation failed: %v",
+	SetupDoneTitle:       "Setup Complete!",
+	SetupDoneConfigSaved: "Config saved to %s",
+	SetupDoneReady:       "You can now run waveloom to start the interactive mode.",
+	SetupConfirmTitle:    "Confirm Settings",
+	SetupConfirmPrompt:   "Confirm the settings above?",
+	SetupHelpHint:        "↑↓ navigate   ⏎ confirm   Esc back   Ctrl+C×2 quit",
+	SetupSummaryTheme:    "Theme",
+
+	SetupStepContextLimit:    "Step %d/%d — Context Window",
+	SetupContextLimitDesc:    "Model context window limit (in tokens). Default 1M for DeepSeek V4. Adjust when switching models to prevent context overflow or premature compaction.",
+	SetupSummaryContextLimit: "Context Window",
+	SetupSummaryLanguage: "Language",
+	SetupSummaryProvider: "Provider",
+	SetupSummaryModel:    "Model",
+	SetupSummarySubModel: "Sub Model",
+	SetupSummaryBaseURL:  "API Endpoint",
+	SetupSummaryAPIKey:   "API Key",
+	SetupConfirmSave:     "Save",
+	SetupConfirmBack:     "Back",
+
+	// Slash commands
+	SlashNewDescription:        "Create new session",
+	SlashNewCreated:            "New session created.",
+	SlashNewFailed:             "Failed to create session: %v",
+	SlashModelDescription:      "Show or switch model",
+	SlashModelListFailed:       "Unable to fetch model list: %v",
+	SlashModelListFailedNoNet:  "Unable to fetch model list. Please check your network and retry.",
+	SlashModelUnknown:          "Unknown model: %s. Type /model to see available models.",
+	SlashModelConfigReadFailed: "Failed to read config: %v",
+	SlashModelConfigSaveFailed: "Failed to save config: %v",
+	SlashModelSwitched:         "Model switched to %s.",
+	SlashModelProPlanAnchorMissing: "proplan requires model and sub_model anchors (settings.json llm section).",
+	SlashThemeDescription:      "Select theme (Auto / Dark / Light / ColorBlind)",
+	SlashLocaleDescription:     "Switch language (zh-CN / en-US)",
+	SlashHelpDescription:       "Show all available commands",
+	SlashHelpText: `Usage tips:
+
+  —— Idle only ——
+  Type /         View and complete commands (↑↓ navigate, ⏎ confirm, Tab autocomplete)
+  Type @         Reference files (↑↓ navigate, ⏎ confirm, Tab dive into directories)
+  ↑↓              Scroll page
+  Ctrl+P / Ctrl+N Browse input history
+  Tab / Shift+Tab Navigate between paragraphs, ⏎ expand / collapse
+  Esc (double)    Clear input
+  exit            Exit program
+
+  Available commands: type / in the input to see the command list.
+
+   —— Anytime ——
+   Ctrl+G          Cycle theme (dark → light → colorblind → auto)
+   ?               Shortcut help overlay
+   Ctrl+E / End    Jump to bottom
+   Ctrl+C×2        Double-tap to quit
+   PgUp / PgDn     Page up / down
+   Esc (running)   Interrupt current agent execution
+
+  Sessions are auto-saved on exit. Use waveloom --continue to resume.`,
+
+	// ── /provider ──
+	ProviderDescription:       "Show or switch LLM Provider (kimi / deepseek / openai)",
+	ProviderList:              "Current Provider: %s (Model: %s)",
+	ProviderAvailable:         "Available Providers:\n%s",
+	ProviderUnknown:           "Unknown Provider: %s. Available: kimi, deepseek, openai",
+	ProviderSwitched:          "Provider switched from %s to %s.",
+	ProviderNoProfiles:        "No provider profiles configured. Please run setup first.",
+	ProviderNotConfigured:     "(not configured)",
+	ProviderConfigReadFailed:  "Failed to read config: %v",
+	ProviderConfigSaveFailed:  "Failed to save config: %v",
+	ProviderModelNotice:       "Current model: %s. Use /model to switch if needed.",
+
+	// CLI help
+	HelpUsageText: `Waveloom — Code Agent CLI
+
+Usage:
+  waveloom                     Interactive TUI mode
+  waveloom ls                  List recent sessions
+  waveloom mcp                 Manage MCP servers
+  waveloom acp                 Run as ACP agent (JSON-RPC over stdio)
+  waveloom setup               First-time setup wizard
+  waveloom completion <shell>  Output shell completion script (bash/zsh/fish)
+  waveloom --help              Show help
+  waveloom --version           Show version
+
+Options:
+  --settings PATH         Config file path (project-level; global ~/.waveloom/settings.json auto-merged)
+  --version               Show version
+  --theme MODE            Theme mode: auto (default) / dark / light / darkcolorblind / lightcolorblind
+                          auto detects terminal background color
+  --locale LANG           Interface language: auto (default) / zh-CN / en-US
+                          auto detects from LANG environment variable
+  --log-level            Log level: debug / info (default) / warn / error
+  --max-turns N           Max turns (0=unlimited)
+  --system-prompt TEXT    System prompt
+  --context-limit N       Context window token limit, supports 1M / 200k / 1048576 etc. (default: 1M)
+  --bypass-permissions    Skip permission checks (TUI prompts; one-shot/ACP enable by default)
+  --no-sandbox            Explicitly disable sandbox (enabled by default in one-shot/ACP; for Docker-like isolated environments)
+  --tool-timeout D         Single tool execution timeout (Go Duration format, e.g. 10m / 600s / 0s, 0 disables, default 10m)
+  --provider NAME         LLM Provider (kimi / deepseek / openai), overrides config file and looks up matching entry in profiles
+  --resume ID             Resume session by ID
+  --continue              Resume the most recent session
+
+Configuration (settings.json):
+  ~/.waveloom/settings.json  Global user config (security baseline)
+  .waveloom/settings.json    Project-level config (fields override global, permissions replace by key)
+  --settings PATH            Explicitly specify project config file
+
+  llm.api_key              API key (required; falls back to LLM_API_KEY env var)
+  llm.provider              Provider (kimi / deepseek / openai, default: deepseek)
+  llm.profiles              Per-provider configs keyed by provider name; active provider's api_key / model / base_url override top-level fields
+  llm.model                 Model name
+  llm.base_url              API endpoint
+  llm.timeout               Request timeout (e.g. "600s")
+  llm.extra_params          Extra parameters (e.g. temperature, max_tokens, thinking)
+
+  permissions.allow[]       Rules to allow directly
+  permissions.deny[]        Rules to deny directly
+  permissions.ask[]         Rules requiring user confirmation
+                            Format: "tool_name" or "tool_name(pattern)"
+
+Environment variables:
+  LLM_API_KEY            API key (fallback when not set in settings.json)
+`,
+
+	// CLI stdout
+	CLIContinueSession:      "Continuing most recent session: %s\n",
+	CLINoRecentSession:      "No recent session found, creating new session\n",
+	CLIResumedSession:       "Resumed session: %s\n",
+	CLILsNoRecent:           "No recent sessions found.",
+	CLILsHeader:             "Recent sessions:",
+	CLILsRestoreHint:        "Restore: waveloom --resume <id>  or  waveloom --continue",
+
+	// One-shot mode
+	OneShotHeader: "🤖 Waveloom (oneshot) — %s\n\n",
+	OneShotFooter: "\n(%s, %s, %s, ↑%s, ↓%s)\n",
+
+	// Session save
+	SessionSaved:      "Session saved: %s\n",
+	SessionResumeHint: "  Resume: waveloom --resume %s\n",
+
+	// Todo panel
+	TodoTitle:        "Todo — %d/%d items",
+	TodoHiddenCount:  "%d hidden",
+	TodoDoneCount:    "%d done",
+	TodoInProgCount:  "%d in progress",
+	TodoPendingCount: "%d pending",
+
+	// Setup locale options
+	SetupLocaleZhCNLabel: "简体中文  (zh-CN)",
+	SetupLocaleEnUSLabel: "English   (en-US)",
+
+	// Subagent suffix
+	SubagentTurnsFmt: "%d turns",
+
+	// Rewind
+	RewindTitle:            "Rewind",
+	RewindPrompt:           "Restore the code and/or conversation to the point before…",
+	RewindNothingToRestore: "Nothing to rewind to yet.",
+	RewindCurrent:          "(current)",
+	RewindConfirmTitle:     "Rewind",
+	RewindConfirmPrompt:    "Confirm you want to restore to the point before you sent this message:",
+	RewindOptionBoth:       "Restore code and conversation",
+	RewindOptionConv:       "Restore conversation only",
+	RewindOptionCode:       "Restore code only",
+	RewindOptionNeverMind:  "Never mind",
+	RewindWarning:          "Rewinding does not affect files edited manually or via bash.",
+	RewindRestoring:        "Restoring…",
+	RewindFailed:           "Failed to restore: %v",
+	RewindNoCodeChanges:    "No code changes",
+	RewindFilesChanged:     "%d files changed",
+	RewindSlashDescription: "Rewind code and/or conversation to a previous point",
+}
+
+// ---------------------------------------------------------------------------
+// Locale 查询
+// ---------------------------------------------------------------------------
+
+// messagesFor 返回指定 locale 对应的 Messages 实例。
+// 不支持的语言回退到 en-US。
+func messagesFor(loc Locale) *Messages {
+	switch loc {
+	case LocaleZhCN:
+		return &zhCN
+	case LocaleEnUS:
+		return &enUS
+	default:
+		return &enUS
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 语言检测
+// ---------------------------------------------------------------------------
+
+// DetectLocale 从环境变量检测用户语言偏好。
+// 优先级：LC_ALL > LANG > 默认 en-US。
+// 仅识别 zh_CN / zh-CN / zh 系列为简体中文，其余回退英语。
+func DetectLocale() Locale {
+	for _, env := range []string{"LC_ALL", "LANG"} {
+		val := os.Getenv(env)
+		if val == "" {
+			continue
+		}
+		normalized := strings.ToLower(strings.TrimSpace(val))
+		// zh_CN.UTF-8 → zh_CN; zh-CN → zh-cn
+		if strings.HasPrefix(normalized, "zh_cn") || strings.HasPrefix(normalized, "zh-cn") ||
+			normalized == "zh" || strings.HasPrefix(normalized, "zh_") {
+			return LocaleZhCN
+		}
+	}
+	return LocaleEnUS
+}
+
+// resolveLocale 将 CLI --locale 参数解析为 Locale 值。
+// "auto" → 自动检测，其余直接映射。
+func resolveLocale(raw string) Locale {
+	switch raw {
+	case "zh-CN":
+		return LocaleZhCN
+	case "en-US":
+		return LocaleEnUS
+	case "auto", "":
+		return DetectLocale()
+	default:
+		return DetectLocale()
+	}
+}

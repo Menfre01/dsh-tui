@@ -1,0 +1,8 @@
+{"type":"server-request","rpcId":"bbbb-0001","method":"host/session-added","payload":{"type":"host/session-added","sessionId":"session-17","blank":true,"cwd":"/work/demo","agentPreset":"coding"}}
+{"type":"server-request","rpcId":"bbbb-0002","method":"host/session-status","payload":{"type":"host/session-status","sessionId":"session-17","running":true}}
+{"type":"server-request","rpcId":"bbbb-0003","method":"host/session-removed","payload":{"type":"host/session-removed","sessionId":"session-17"}}
+{"type":"server-request","rpcId":"bbbb-0004","method":"host/agent-error","payload":{"type":"host/agent-error","sessionId":"session-17","message":"adapter blew up"}}
+{"type":"server-request","rpcId":"bbbb-0005","method":"host/workspace-changed","payload":{"type":"host/workspace-changed","workspace":{"workspaceId":"ws-1","name":"demo","sessions":["session-17"]}}}
+{"type":"server-request","rpcId":"bbbb-0006","method":"host/workspace-removed","payload":{"type":"host/workspace-removed","workspaceId":"ws-2"}}
+{"type":"server-request","rpcId":"bbbb-0007","method":"host/workspace-order-changed","payload":{"type":"host/workspace-order-changed","workspaceIds":["ws-1","ws-3"]}}
+{"type":"server-request","rpcId":"bbbb-0008","method":"host/archived-sessions-changed","payload":{"type":"host/archived-sessions-changed","archivedSessionIds":["session-3"]}}

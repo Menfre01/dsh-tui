@@ -1,0 +1,5 @@
+{"type":"server-response","rpcId":"9f1c2d3e-4a5b-4c6d-8e7f-001122334455","result":{"ok":true,"value":{"sessionId":"session-17","agentPreset":"coding"}}}
+{"type":"server-response","rpcId":"9f1c2d3e-4a5b-4c6d-8e7f-001122334456","result":{"ok":true,"value":{"items":[{"sessionId":"session-17","updatedAt":1723550000000,"running":true,"blank":false,"cwd":"/work/demo","agentPreset":"coding"},{"sessionId":"session-3","updatedAt":1723540000000,"running":false,"blank":true,"parentSessionId":"session-1","origin":"subagent","cwd":"/work/demo"}]}}}
+{"type":"server-response","rpcId":"9f1c2d3e-4a5b-4c6d-8e7f-001122334457","result":{"ok":true,"value":{"version":"0.1.0","cwd":"/work/demo","provider":"deepseek","model":"deepseek-chat","attachedSessions":2,"canOpenPath":true}}}
+{"type":"server-response","rpcId":"9f1c2d3e-4a5b-4c6d-8e7f-001122334458","result":{"ok":false,"error":{"code":"agent-busy","message":"session-17 already has a live agent","details":{"reason":"busy"}}}}
+{"type":"server-response","rpcId":"9f1c2d3e-4a5b-4c6d-8e7f-001122334459","result":{"ok":true,"value":{"accepted":true}}}

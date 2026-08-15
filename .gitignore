@@ -1,0 +1,14 @@
+# 构建产物
+bin/
+
+# 工作区 Go 缓存(沙箱/离线友好)
+.gocache/
+.gopath/
+.modcache/
+
+# 本地工具与临时分析产物
+.waveloom/
+.tmp-harness/
+
+# 测试临时文件
+*.test

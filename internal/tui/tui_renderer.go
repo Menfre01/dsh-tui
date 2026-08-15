@@ -1,0 +1,3142 @@
+package tui
+
+import (
+	"encoding/json"
+	"fmt"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/glamour/v2"
+	"charm.land/lipgloss/v2"
+)
+
+// ---------------------------------------------------------------------------
+// 段落类型
+// ---------------------------------------------------------------------------
+
+// ParagraphType 标识段落的角色。
+type ParagraphType int
+
+const (
+	paraUser      ParagraphType = iota // > 用户消息
+	paraAssistant                      // * assistant 回复（含 markdown）
+	paraThought                        // ~ 思考过程
+	paraTool                           // ● 工具调用
+	paraSystem                         // ◼ 系统提示（终止原因、状态通知等）
+	paraSubagent                       // ◆ 子 agent 容器
+)
+
+// paraStateEnum 标识段落的渲染状态。
+type paraStateEnum int
+
+const (
+	stateStreaming  paraStateEnum = iota // 流式进行中 → 呼吸动画
+	stateDone                            // 完成 → 静态
+	stateCollapsed                       // 折叠态（thought 收敛为一行 / tool 默认摘要+预览）
+	stateExpanded                        // 展开态（thought 完整内容外框 / tool 完整输出）
+	stateError                           // 错误态（tool 红色）
+)
+
+// systemNotifKind 区分系统通知的类型，用于着色。
+type systemNotifKind int
+
+const (
+	notifInfo  systemNotifKind = iota // 完成/中断 — gray
+	notifWarn                         // 警告 — amber gold
+	notifError                        // 错误 — red
+)
+
+// ---------------------------------------------------------------------------
+// Paragraph 结构体
+// ---------------------------------------------------------------------------
+
+// Paragraph 是 TUI 中一条可渲染的对话段落。
+type Paragraph struct {
+	Type  ParagraphType
+	State paraStateEnum
+	Text  string // 文本内容（assistant / thought / user 消息正文）
+
+	// Tool 专用字段
+	ToolName      string
+	ToolArgs      string // 格式化后的参数摘要
+	ToolResult    string // 完整输出（展开时显示）
+	ToolError     string // 错误信息
+	ToolErrorKind string // 错误分类（如 timeout、command_failed 等）
+	ToolDurMs     int64  // 执行耗时(毫秒)
+	ToolDenied    bool   // 权限被拒
+	ToolFatal     bool   // 错误是否致命,TUI 据此区分红(fatal)/金(recoverable)样式
+	// ToolServerSide 标记该工具为服务端自动执行(Responses API 的 web_search_call),
+	// 非本地工具调用;TUI 据此显示 "(server)" 摘要而非空参数 + (0ms)。
+	ToolServerSide bool
+	DiffHunks      []DiffHunk // edit_file 结构化 diff(nil = 不适用或纯文本回退)
+	// ToolExitCode/ToolSignal 来自宿主 terminal result view(-1 = 宿主未提供,
+	// 回退文本解析)。ToolDurMs 由投影层按 call/result 事件时间差计算。
+	ToolExitCode int
+	ToolSignal   string
+	// ToolTodo 标记 todo_write 调用段落(样式:不显示参数 JSON,
+	// suffix 显示计数摘要 ToolTodoSummary,如 "已完成 2/6")。
+	ToolTodo        bool
+	ToolTodoSummary string
+	// ToolQuestionCount 是 ask_user_question 调用的问题数(投影层从
+	// 原始 arguments 解析;ToolArgs 是格式化摘要,文本解析不可靠)
+	ToolQuestionCount int
+	// ReadPath/ReadLines 来自宿主 card=read 视图(结构化行号窗口;
+	// nil ReadLines = 无 read view,回退纯文本)
+	ReadPath  string
+	ReadLines []ReadLine
+	// SearchGroups/SearchPaths 来自宿主 card=search 视图(grep/glob 结构化;
+	// 均 nil = 无 search view,回退纯文本)
+	SearchGroups    []SearchFileGroup
+	SearchPaths     []string
+	SearchTruncated bool
+	SearchTotal     int
+
+	// Thought 专用字段
+	ThoughtTokens int // 完成后的 token 数
+
+	// System 专用字段
+	NotifKind systemNotifKind // 通知类型（仅 paraSystem 有效）
+
+	// Subagent 专用字段
+	SubagentType       string // "fork" | "evaluate" | "Explore" | "verification"
+	SubagentModel      string // 模型名，与主模型不同时显示在 suffix
+	SubagentPrompt     string // 委派任务描述
+	SubagentTurns      int    // 总轮次
+	SubagentPromptTok  int    // ↑ 输入 token
+	SubagentComplTok   int    // ↓ 输出 token
+	SubagentToolCallID string // 父级 tool_call ID，用于并发 subagent 事件路由
+
+	// Phase 2: 结构化事件列表（展开态渲染使用，完成/折叠态仍用 Text 兜底）
+	SubagentEvents []SubagentEvent
+
+	// 渲染缓存（避免每次 buildViewportContent 时重复 Glamour 渲染）
+	renderedCache string
+	cacheWidth    int // 缓存时的 viewport 宽度，宽度变化时失效
+
+	// 段落级渲染缓存：缓存完整的渲染后行数组（含前缀/缩进），避免全量重建。
+	// renderDirty=true 表示段落内容或状态已变更，需要重新渲染。
+	renderDirty    bool
+	cachedLines    []string // 缓存的渲染后行（含前缀/缩进/换行）
+	cachedWidth    int      // 缓存时的 viewport 宽度
+	cachedFocused  bool     // 缓存时的焦点状态
+}
+
+// ---------------------------------------------------------------------------
+// 段落列表操作
+// ---------------------------------------------------------------------------
+
+// lastPara 返回段落列表的最后一个元素指针，nil 表示列表为空。
+func lastPara(paras []Paragraph) *Paragraph {
+	if len(paras) == 0 {
+		return nil
+	}
+	return &paras[len(paras)-1]
+}
+
+// ---------------------------------------------------------------------------
+// 工具参数摘要格式化
+// ---------------------------------------------------------------------------
+
+// stripCWDPrefix 切掉 cwd 前缀（含尾部 /），使路径相对 cwd 显示。
+// 若字段不以 cwd 为前缀则原样返回。
+func stripCWDPrefix(field, cwd string) string {
+	if cwd == "" || field == "" {
+		return field
+	}
+	// 归一化路径分隔符为 /，确保 Windows（cwd 含 \）与 LLM 输出（/）可比对。
+	field = filepath.ToSlash(field)
+	cwd = filepath.ToSlash(cwd)
+	prefix := cwd + "/"
+	if strings.HasPrefix(field, prefix) {
+		return field[len(prefix):]
+	}
+	// 容忍 cwd 不以 / 结尾的情况
+	if strings.HasPrefix(field, cwd+"/") {
+		return field[len(cwd)+1:]
+	}
+	return field
+}
+
+// formatToolArgs 将工具名和 JSON 参数格式化为一行可读摘要。
+func formatToolArgs(toolName string, argsJSON string, cwd string) string {
+	switch toolName {
+	case "read":
+		return formatReadArgs(argsJSON, cwd)
+	case "write":
+		return stripCWDPrefix(extractField(argsJSON, "file_path"), cwd)
+	case "edit":
+		// dsh edit 参数为 {file_path, old_string, new_string} 三元组,
+		// 不同于 waveloom 的 hunk patch 格式;摘要显示文件路径,
+		// 变更详情由 diff 视图(call/result view)展示。
+		return stripCWDPrefix(extractField(argsJSON, "file_path"), cwd)
+	case "bash":
+		cmd := extractField(argsJSON, "command")
+		// 归一化:剥离 "cd <path> &&" 前缀,避免 turn log 中显示冗长的 cd 前缀
+		var result string
+		if normalized, _ := NormalizeShellCommand(cmd); normalized != "" {
+			result = normalized
+		} else {
+			result = cmd
+		}
+		// 多行命令拼接为单行,用 && 连接,保持摘要行整洁
+		return collapseMultilineCommand(result)
+	case "web_fetch":
+		u := extractField(argsJSON, "url")
+		if u != "" {
+			return u
+		}
+		return truncateStr(argsJSON, 50)
+	case "web_search":
+		q := extractField(argsJSON, "query")
+		// query 为空也正常展示（空查询会被工具拒绝并返回 error）
+		return q
+	case "skill":
+		name := extractField(argsJSON, "name")
+		args := extractField(argsJSON, "arguments")
+		// 去掉 / 前缀(用户输入 /skill-name,内部存储 skill-name)
+		name = strings.TrimPrefix(name, "/")
+		if args != "" {
+			// 对 skill 名称和参数分别做宽度适配:名称最多 30 字符,参数最多 40 字符
+			return truncateStr(name, 30) + " " + truncateStr(args, 40)
+		}
+		return truncateStr(name, 30)
+	case "agent":
+		if desc := extractField(argsJSON, "description"); desc != "" {
+			return desc
+		}
+		if t := extractField(argsJSON, "subagent_type"); t != "" {
+			return t + " · " + extractField(argsJSON, "description")
+		}
+		return "fork · " + extractField(argsJSON, "description")
+	case "ask_user_question":
+		return formatQuestionArgs(argsJSON)
+	case "grep", "glob":
+		// 摘要行展示 pattern,而非原始参数 JSON
+		return extractField(argsJSON, "pattern")
+	case "job_output":
+		id := extractField(argsJSON, "job_id")
+		// wait 是布尔参数,extractField 只支持字符串,用包含检查
+		if strings.Contains(argsJSON, `"wait":true`) {
+			return id + " (wait)"
+		}
+		return id
+	case "job_kill":
+		return extractField(argsJSON, "job_id")
+	case "job_list":
+		return "" // 无参数
+	case "read_image":
+		return stripCWDPrefix(extractField(argsJSON, "file_path"), cwd)
+	case "pwsh":
+		// PowerShell 命令(与 bash 同风格)
+		return collapseMultilineCommand(extractField(argsJSON, "command"))
+	case "ralph":
+		return truncateStr(extractField(argsJSON, "objective"), 50)
+	case "create_goal":
+		return truncateStr(extractField(argsJSON, "objective"), 50)
+	case "get_goal":
+		return "" // 无参数
+	case "update_goal":
+		id := extractField(argsJSON, "goal_id")
+		if action := extractField(argsJSON, "action"); action != "" {
+			return id + " " + action
+		}
+		return id
+	case "interrupt_agent":
+		return extractField(argsJSON, "agent_id")
+	case "send_message":
+		id := extractField(argsJSON, "agent_id")
+		if msg := truncateStr(extractField(argsJSON, "message"), 30); msg != "" {
+			return id + " " + msg
+		}
+		return id
+	case "report":
+		return "" // 子代理回报内容走预览区
+	case "str_replace_editor":
+		// 参数: command(file_path/old_string/new_string/view) 等
+		cmd := extractField(argsJSON, "command")
+		fp := stripCWDPrefix(extractField(argsJSON, "file_path"), cwd)
+		if cmd != "" && fp != "" {
+			return cmd + " " + fp
+		}
+		if cmd != "" {
+			return cmd
+		}
+		return fp
+	case "enter_plan_mode", "exit_plan_mode":
+		return "" // 无参数工具，不显示 {}
+	default:
+		if strings.HasPrefix(toolName, "mcp__") {
+			// MCP 工具: mcp__<server>__<tool> → 展示第一个有意义参数值
+			label := mcpToolLabel(toolName)
+			if v := extractField(argsJSON, "query"); v != "" {
+				return label + " " + v
+			}
+			if v := extractField(argsJSON, "pattern"); v != "" {
+				return label + " " + v
+			}
+			if v := extractField(argsJSON, "prompt"); v != "" {
+				return label + " " + v
+			}
+			if v := extractField(argsJSON, "name"); v != "" {
+				return label + " " + v
+			}
+			return label
+		}
+		return truncateStr(argsJSON, 50)
+	}
+}
+
+// extractField 从 JSON 字符串中提取指定 key 的字符串值（纯字符串操作，零分配热路径）。
+func extractField(jsonStr, key string) string {
+	search := `"` + key + `"`
+	idx := strings.Index(jsonStr, search)
+	if idx < 0 {
+		return ""
+	}
+	rest := jsonStr[idx+len(search):]
+
+	// 跳过空白和冒号
+	colonIdx := strings.Index(rest, ":")
+	if colonIdx < 0 {
+		return ""
+	}
+	rest = strings.TrimLeft(rest[colonIdx+1:], " \t")
+
+	if len(rest) == 0 || rest[0] != '"' {
+		return ""
+	}
+	rest = rest[1:] // 跳过开引号
+
+	// 跳过 JSON 转义:找到未转义的闭合引号
+	// JSON 字符串中 \" 是转义引号(不计为结束),\\ 是转义反斜杠
+	endIdx := -1
+	for i := 0; i < len(rest); i++ {
+		if rest[i] == '\\' && i+1 < len(rest) {
+			i++ // 跳过转义字符(下一个字符无论是 " 还是 \ 都不作为终结符)
+			continue
+		}
+		if rest[i] == '"' {
+			endIdx = i
+			break
+		}
+	}
+	if endIdx < 0 {
+		return ""
+	}
+	return rest[:endIdx]
+}
+// extractInt 从 JSON 字符串中提取指定 key 的整数值(纯字符串操作)。
+// 未找到或解析失败返回 0(调用方通过返回值区分"未设置"和"0"已足够)。
+func extractInt(jsonStr, key string) int {
+	search := `"` + key + `"`
+	idx := strings.Index(jsonStr, search)
+	if idx < 0 {
+		return 0
+	}
+	rest := jsonStr[idx+len(search):]
+	colonIdx := strings.Index(rest, ":")
+	if colonIdx < 0 {
+		return 0
+	}
+	rest = strings.TrimLeft(rest[colonIdx+1:], " \t")
+	numStr := takeDigits(rest)
+	if numStr == "" {
+		return 0
+	}
+	return atoi(numStr)
+}
+
+// formatReadArgs 格式化 read 工具的参数摘要。
+// 在文件路径基础上展示 pattern / offset / limit / context_lines。
+func formatReadArgs(argsJSON, cwd string) string {
+	fp := stripCWDPrefix(extractField(argsJSON, "file_path"), cwd)
+	if fp == "" {
+		return truncateStr(argsJSON, 40)
+	}
+	var parts []string
+	parts = append(parts, fp)
+
+	// pattern: 显示为 "pattern text"
+	pattern := extractField(argsJSON, "pattern")
+	if pattern != "" {
+		parts = append(parts, fmt.Sprintf("· %q", truncateStr(pattern, 30)))
+	}
+
+	// offset / limit: 显示为 @LN 或 @LN+N
+	offset := extractInt(argsJSON, "offset")
+	limit := extractInt(argsJSON, "limit")
+	if offset > 0 || limit > 0 {
+		loc := "@L"
+		if offset > 0 {
+			loc += strconv.Itoa(offset)
+		} else {
+			loc += "0"
+		}
+		if limit > 0 {
+			loc += "+" + strconv.Itoa(limit)
+		}
+		parts = append(parts, loc)
+	}
+
+	// context_lines: 仅在有 pattern 时有意义,显示为 ±N
+	ctxLines := extractInt(argsJSON, "context_lines")
+	if ctxLines > 0 && pattern != "" {
+		parts = append(parts, fmt.Sprintf("±%d", ctxLines))
+	}
+
+	return strings.Join(parts, " ")
+}
+
+// truncateStr 截断字符串到 maxLen。
+func truncateStr(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	return string(runes[:maxLen])
+}
+
+// truncateByDisplayWidth 按显示列宽截断字符串，末尾添加 "…"。
+// 与 truncateStr 不同：本函数按终端显示宽度截断，正确处理 CJK 全角字符（每字符 2 列）。
+func truncateByDisplayWidth(s string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+	if displayWidth(s) <= maxWidth {
+		return s
+	}
+	// 预留 "…" (1 rune，displayWidth=1) 或 "..." (3 runes，displayWidth=3)
+	// 这里用 "…" 更紧凑，但仍需 1 列显示宽度
+	ellipsis := "…"
+	ellipsisWidth := displayWidth(ellipsis)
+	targetWidth := maxWidth - ellipsisWidth
+	if targetWidth < 0 {
+		return ellipsis
+	}
+	runes := []rune(s)
+	w := 0
+	cut := 0
+	for i, r := range runes {
+		rw := 1
+		if r >= 128 {
+			rw = lipgloss.Width(string(r))
+		}
+		if w+rw > targetWidth {
+			break
+		}
+		w += rw
+		cut = i + 1
+	}
+	if cut == 0 {
+		return ellipsis
+	}
+	return string(runes[:cut]) + ellipsis
+}
+// collapseMultilineCommand 将多行 shell 命令拼接为单行。
+// extractField 返回原始 JSON 子串(不含 JSON 反转义),因此需要对 JSON 转义序列
+// 做特殊处理: \\\n(JSON \\\n = shell \<newline\> 续行)、\\n(JSON \\n = 字面量 \n)、
+// \n(JSON \n = 换行 = 命令分隔)。使用占位符分两趟处理,避免替换后产生的新 \n
+// 被后续规则误匹配。
+func collapseMultilineCommand(cmd string) string {
+	const markerLineCont = "\x00LC" // shell 续行符压缩为空格
+	const markerLitN = "\x00LN"     // 字面量 \n 原样保留
+
+	s := cmd
+	// Pass 1: 标记 JSON 转义序列(最长匹配优先)
+	s = strings.ReplaceAll(s, `\\\n`, markerLineCont) // JSON \\\n → shell \<newline\> → space
+	s = strings.ReplaceAll(s, `\\n`, markerLitN)      // JSON \\n → shell \n(字面量)
+	// 防御:处理实际 \<newline\>(extractField 不应产生,但容错)
+	s = strings.ReplaceAll(s, "\\\n", markerLineCont)
+
+	// Pass 2: 转换剩余转义序列
+	s = strings.ReplaceAll(s, `\n`, " && ") // JSON \n → 命令分隔
+	s = strings.ReplaceAll(s, "\n", " && ") // 实际换行 → 命令分隔
+
+	// Pass 3: 还原标记
+	s = strings.ReplaceAll(s, markerLineCont, " ")
+	s = strings.ReplaceAll(s, markerLitN, `\n`)
+
+	// Pass 3b: 还原 JSON 转义引号和反斜杠
+	s = strings.ReplaceAll(s, `\"`, `"`)
+	s = strings.ReplaceAll(s, `\\`, `\`)
+
+	// Pass 4: 清理
+	s = strings.Join(strings.Fields(s), " ")
+	for strings.Contains(s, " &&  && ") {
+		s = strings.ReplaceAll(s, " &&  && ", " && ")
+	}
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(s, "&& ")
+	s = strings.TrimSuffix(s, " &&")
+	return s
+}
+// formatQuestionArgs 从 ask_user_question 的 JSON 参数中提取问题 header 摘要。
+// 解析失败或 header 过多时回退到截断原 JSON。
+func formatQuestionArgs(argsJSON string) string {
+	var params struct {
+		Questions []struct {
+			Header string `json:"header"`
+		} `json:"questions"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &params); err != nil || len(params.Questions) == 0 {
+		return truncateStr(argsJSON, 50)
+	}
+	headers := make([]string, len(params.Questions))
+	for i, q := range params.Questions {
+		headers[i] = q.Header
+	}
+	return strings.Join(headers, ", ")
+}
+
+// parseQuestionResult 解析 ask_user_question 的 ToolResult JSON，
+// 返回 question→answers 的映射和问题列表（用于渲染顺序）。
+func parseQuestionResult(resultJSON string) (map[string]string, []string) {
+	var data struct {
+		Questions []struct {
+			Question string `json:"question"`
+			Header   string `json:"header"`
+		} `json:"questions"`
+		Answers map[string]string `json:"answers"`
+	}
+	if err := json.Unmarshal([]byte(resultJSON), &data); err != nil {
+		return nil, nil
+	}
+	m := make(map[string]string, len(data.Questions))
+	order := make([]string, 0, len(data.Questions))
+	for _, q := range data.Questions {
+		answer := data.Answers[q.Question]
+		m[q.Header] = answer
+		order = append(order, q.Header)
+	}
+	return m, order
+}
+
+// formatQuestionPreview 将问答结果渲染为可读预览行（折叠态）。
+func formatQuestionPreview(resultJSON string, textWidth int, indent string, lc *Messages) string {
+	answers, order := parseQuestionResult(resultJSON)
+	if len(order) == 0 {
+		return ""
+	}
+	// 与其他工具预览的 toolOutputPrefix 前缀保持一致
+	contentWidth := textWidth - lipgloss.Width(toolOutputPrefix)
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+	var sb strings.Builder
+	wrapped := 0
+	truncated := false
+	for _, header := range order {
+		answer := answers[header]
+		if answer == "" {
+			answer = lc.ToolQuestionDeclined
+		}
+		line := header + " → " + answer
+		for _, wl := range wrapLine(line, contentWidth) {
+			if wrapped >= maxPreviewWrapped {
+				truncated = true
+				break
+			}
+			sb.WriteString(indent)
+			sb.WriteString(styleMuted.Render(toolOutputPrefix))
+			sb.WriteString(wl)
+			sb.WriteString("\n")
+			wrapped++
+		}
+		if truncated {
+			break
+		}
+	}
+	if truncated {
+		sb.WriteString(indent)
+		sb.WriteString(styleToolPreviewHint.Render(lc.ToolTruncated))
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
+// formatQuestionExpanded 将问答结果渲染为展开态，与 shell output 对齐（│ header → answer）。
+func formatQuestionExpanded(resultJSON string, indent string, textWidth int, lc *Messages) string {
+	answers, order := parseQuestionResult(resultJSON)
+	if len(order) == 0 {
+		return ""
+	}
+	contentWidth := textWidth - lipgloss.Width(toolOutputPrefix)
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+	var sb strings.Builder
+	wrapped := 0
+	truncated := false
+	for _, header := range order {
+		answer := answers[header]
+		if answer == "" {
+			answer = lc.ToolQuestionDeclined
+		}
+		line := header + " → " + answer
+		for _, wl := range wrapLine(line, contentWidth) {
+			if wrapped >= maxExpandedWrapped {
+				truncated = true
+				break
+			}
+			sb.WriteString(indent)
+			sb.WriteString(styleMuted.Render(toolOutputPrefix))
+			sb.WriteString(wl)
+			sb.WriteString("\n")
+			wrapped++
+		}
+		if truncated {
+			break
+		}
+	}
+	if truncated {
+		sb.WriteString(indent)
+		sb.WriteString(styleToolPreviewHint.Render(fmt.Sprintf(lc.ToolTruncatedLines, maxExpandedWrapped)))
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
+// ---------------------------------------------------------------------------
+// 工具摘要后缀格式化
+// ---------------------------------------------------------------------------
+
+// toolSuffix 根据工具类型和结果生成成功/失败的后缀字符串。
+func toolSuffix(p *Paragraph, lc *Messages) string {
+	// 工具仍在执行中，尚无结果
+	if p.State == stateStreaming {
+		return ""
+	}
+
+	if p.ToolError != "" {
+		// 工具专用简短错误后缀：摘要保持简洁，完整错误在预览区展示
+		switch p.ToolName {
+		case "bash":
+			// 结构化退出码优先(宿主 terminal view),回退文本解析
+			if p.ToolExitCode >= 0 {
+				return fmt.Sprintf("(exit=%d)", p.ToolExitCode)
+			}
+			code := parseExitCode(p.ToolResult)
+			if code >= 0 {
+				return fmt.Sprintf("(exit=%d)", code)
+			}
+		case "web_fetch":
+			return webFetchErrorSuffix(p.ToolErrorKind, p.ToolError)
+		case "web_search":
+			return webSearchErrorSuffix(p.ToolErrorKind, p.ToolError)
+		case "edit":
+			return editFileErrorSuffix(p.ToolErrorKind, p.ToolError)
+		case "exit_plan_mode":
+			if p.ToolErrorKind == "user_declined" {
+				return "(rejected)"
+			}
+		}
+		// 通用回退:用错误分类作为后缀，避免路径等长信息与预览区重叠
+		kind := p.ToolErrorKind
+		if kind == "" {
+			kind = "failed"
+		}
+		return fmt.Sprintf("(%s)", kind)
+	}
+	if p.ToolDenied {
+		return "(permission denied)"
+	}
+
+	switch p.ToolName {
+	case "read", "write":
+		size := formatBytes(len(p.ToolResult))
+		dur := formatDuration(p.ToolDurMs)
+		return fmt.Sprintf("(%s, %s)", size, dur)
+	case "edit":
+		dur := formatDuration(p.ToolDurMs)
+		var added, removed int
+		if p.DiffHunks != nil {
+			for _, h := range p.DiffHunks {
+				a, r := h.Stats()
+				added += a
+				removed += r
+			}
+		} else {
+			added, removed = countDiffLines(p.ToolResult)
+		}
+		return fmt.Sprintf("(+%d -%d lines, %s)", added, removed, dur)
+	case "bash":
+		dur := formatDuration(p.ToolDurMs)
+		// 结构化退出码/信号优先(宿主 terminal result view),回退文本解析
+		if p.ToolSignal != "" {
+			return fmt.Sprintf("(killed: %s, %s)", p.ToolSignal, dur)
+		}
+		if p.ToolExitCode >= 0 {
+			return fmt.Sprintf("(exit=%d, %s)", p.ToolExitCode, dur)
+		}
+		code := parseExitCode(p.ToolResult)
+		if code >= 0 {
+			return fmt.Sprintf("(exit=%d, %s)", code, dur)
+		}
+		return fmt.Sprintf("(%s)", dur)
+	case "web_fetch", "skill":
+		size := formatBytes(len(p.ToolResult))
+		dur := formatDuration(p.ToolDurMs)
+		return fmt.Sprintf("(%s, %s)", size, dur)
+	case "grep":
+		n := 0
+		for _, g := range p.SearchGroups {
+			n += len(g.Matches)
+		}
+		if n == 0 {
+			n = countGrepMatches(p.ToolResult)
+		}
+		if p.SearchTruncated && p.SearchTotal > n {
+			n = p.SearchTotal
+		}
+		dur := formatDuration(p.ToolDurMs)
+		if n > 0 {
+			return fmt.Sprintf("(%d matches, %s)", n, dur)
+		}
+		return fmt.Sprintf("(%s)", dur)
+	case "glob":
+		n := len(p.SearchPaths)
+		if n == 0 {
+			n = countNonEmptyLines(p.ToolResult)
+		}
+		dur := formatDuration(p.ToolDurMs)
+		if n > 0 {
+			return fmt.Sprintf("(%d paths, %s)", n, dur)
+		}
+		return fmt.Sprintf("(%s)", dur)
+	case "web_search":
+		// 服务端自动执行的搜索(Responses API):无本地结果列表,显示
+		// "(server, <耗时>)" 区分于本地 DuckDuckGo/Brave 的 "(N results, <耗时>)"
+		if p.ToolServerSide {
+			dur := formatDuration(p.ToolDurMs)
+			if dur == "0ms" {
+				return "(server)"
+			}
+			return fmt.Sprintf("(server, %s)", dur)
+		}
+		n := countSearchResults(p.ToolResult)
+		dur := formatDuration(p.ToolDurMs)
+		if n > 0 {
+			return fmt.Sprintf("(%d results, %s)", n, dur)
+		}
+		return fmt.Sprintf("(%s)", dur)
+	case "ask_user_question":
+		n := p.ToolQuestionCount
+		if n <= 0 {
+			n = parseQuestionCount(p.ToolResult)
+		}
+		if n <= 0 {
+			n = parseQuestionCount(p.ToolArgs)
+		}
+		return fmt.Sprintf(lc.ToolNQuestions, n)
+	case "job_output":
+		// 结果文本尾部带 "[status: ...]" 状态行
+		if status := parseJobStatus(p.ToolResult); status != "" {
+			return "(" + status + ")"
+		}
+		dur := formatDuration(p.ToolDurMs)
+		return fmt.Sprintf("(%s)", dur)
+	case "job_list":
+		n := countNonEmptyLines(p.ToolResult)
+		if n > 0 {
+			return fmt.Sprintf("(%d jobs)", n)
+		}
+		dur := formatDuration(p.ToolDurMs)
+		return fmt.Sprintf("(%s)", dur)
+	case "job_kill":
+		return "(killed)"
+	case "todo_write":
+		if p.ToolTodoSummary != "" {
+			return "(" + p.ToolTodoSummary + ")"
+		}
+		return ""
+	case "enter_plan_mode":
+		return "" // 进入 plan 模式，无额外摘要
+	case "exit_plan_mode":
+		return "" // 审批通过，无额外摘要
+	default:
+		dur := formatDuration(p.ToolDurMs)
+		return fmt.Sprintf("(%s)", dur)
+	}
+}
+
+// webFetchErrorSuffix 返回 web_fetch 错误的简短后缀。
+// 从 ToolError.Message 中提取 HTTP 状态码或使用错误分类。
+func webFetchErrorSuffix(kind, msg string) string {
+	switch kind {
+	case "timeout":
+		return "(timeout)"
+	case "invalid_args":
+		return "(invalid URL)"
+	case "binary_file":
+		return "(unsupported type)"
+	case "command_failed":
+		// HTTP 错误：提取状态码，如 "HTTP 404 Not Found" → "(HTTP 404)"
+		if strings.HasPrefix(msg, "HTTP ") {
+			parts := strings.SplitN(msg, " ", 3)
+			if len(parts) >= 2 {
+				return fmt.Sprintf("(HTTP %s)", parts[1])
+			}
+		}
+		return "(request failed)"
+	default:
+		return fmt.Sprintf("(%s)", kind)
+	}
+}
+
+// editFileErrorSuffix 为 edit_file 错误生成简短后缀，避免与预览区完整错误内容重叠。
+func editFileErrorSuffix(kind, msg string) string {
+	switch kind {
+	case "multiple_matches":
+		// "found N matches for ..." → "(N matches)"
+		if n := parseMatchCount(msg); n > 0 {
+			return fmt.Sprintf("(%d matches)", n)
+		}
+		return "(multiple_matches)"
+	default:
+		return fmt.Sprintf("(%s)", kind)
+	}
+}
+
+// parseMatchCount 从 "found N matches" 中提取数字 N。
+func parseMatchCount(msg string) int {
+	// msg: "found 3 matches for old_string in /path; ..."
+	if !strings.HasPrefix(msg, "found ") {
+		return 0
+	}
+	rest := strings.TrimPrefix(msg, "found ")
+	// 找到第一个空格或 "matches" 之前的部分
+	idx := strings.Index(rest, " ")
+	if idx < 0 {
+		return 0
+	}
+	n, err := strconv.Atoi(rest[:idx])
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// formatBytes 将字节数格式化为人类可读的字符串。
+func formatBytes(n int) string {
+	switch {
+	case n >= 1024*1024:
+		return fmt.Sprintf("%.1fMB", float64(n)/(1024*1024))
+	case n >= 1024:
+		return fmt.Sprintf("%.1fKB", float64(n)/1024)
+	default:
+		return fmt.Sprintf("%dB", n)
+	}
+}
+
+// formatDuration 将毫秒格式化为人类可读的字符串。
+func formatDuration(ms int64) string {
+	switch {
+	case ms < 1000:
+		return fmt.Sprintf("%dms", ms)
+	case ms < 60_000:
+		return fmt.Sprintf("%.1fs", float64(ms)/1000)
+	case ms < 3_600_000:
+		s := (ms / 1000) % 60
+		m := ms / 60_000
+		return fmt.Sprintf("%dm%ds", m, s)
+	default:
+		m := (ms / 60_000) % 60
+		h := ms / 3_600_000
+		return fmt.Sprintf("%dh%dm", h, m)
+	}
+}
+
+// formatTokens 将 token 数格式化为紧凑的人类可读形式。
+//   0 → "0", 512 → "512", 3860 → "3.9K", 38600 → "38.6K", 1000000 → "1.0M"
+func formatTokens(n int) string {
+	switch {
+	case n < 1000:
+		return fmt.Sprintf("%d", n)
+	case n < 10_000:
+		return fmt.Sprintf("%.1fK", float64(n)/1000)
+	case n < 1_000_000:
+		v := float64(n) / 1000
+		if v >= 100 {
+			return fmt.Sprintf("%.0fK", v)
+		}
+		return fmt.Sprintf("%.1fK", v)
+	default:
+		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+	}
+}
+
+// formatBalance 将余额信息格式化为单行紧凑显示。
+// 优先展示 USD 余额，若无则取首个币种；不支持时返回空字符串。
+func formatBalance(balance *BalanceInfo) string {
+	if balance == nil || len(balance.BalanceInfos) == 0 {
+		return ""
+	}
+	// 优先取 USD
+	var cb *CurrencyBalance
+	for i := range balance.BalanceInfos {
+		if balance.BalanceInfos[i].Currency == "USD" {
+			cb = &balance.BalanceInfos[i]
+			break
+		}
+	}
+	if cb == nil {
+		cb = &balance.BalanceInfos[0]
+	}
+	return fmt.Sprintf("%s %s", cb.Currency, cb.TotalBalance)
+}
+
+// countDiffLines 从工具输出中估算增删行数。
+func countDiffLines(output string) (added, removed int) {
+	for _, line := range strings.Split(output, "\n") {
+		trimmed := strings.TrimLeft(line, " ")
+		if strings.HasPrefix(trimmed, "+") && !strings.HasPrefix(trimmed, "+++") {
+			added++
+		} else if strings.HasPrefix(trimmed, "-") && !strings.HasPrefix(trimmed, "---") {
+			removed++
+		}
+	}
+	return
+}
+
+// takeDigits 提取字符串开头的连续数字。
+func takeDigits(s string) string {
+	i := 0
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	return s[:i]
+}
+
+// atoi 简易字符串转整数。
+func atoi(s string) int {
+	n := 0
+	for _, ch := range s {
+		n = n*10 + int(ch-'0')
+	}
+	return n
+}
+
+// parseExitCode 从 shell 输出首行提取退出码。
+// 格式: "✅ Command succeeded (exit=0)  123ms" 或 "❌ Command failed (exit=1)  456ms"
+func parseExitCode(output string) int {
+	firstLine := strings.SplitN(output, "\n", 2)[0]
+	idx := strings.Index(firstLine, "(exit=")
+	if idx < 0 {
+		return -1
+	}
+	rest := firstLine[idx+len("(exit="):]
+	numStr := takeDigits(rest)
+	if numStr == "" {
+		return -1
+	}
+	return atoi(numStr)
+}
+
+// parseQuestionCount 从 ask_user_question 的 JSON 中解析问题数量。
+func parseQuestionCount(jsonStr string) int {
+	var params struct {
+		Questions []struct{} `json:"questions"`
+	}
+	if err := json.Unmarshal([]byte(jsonStr), &params); err != nil {
+		return 0
+	}
+	return len(params.Questions)
+}
+
+// parseWebFetchBody 从 web_fetch 输出中剥离元数据头部，返回纯正文。
+// 头部格式: "Fetched <url>  HTTP <code>  <duration>\nContent-Type: ...\nSize: ...\n\n<body>"
+func parseWebFetchBody(output string) string {
+	idx := strings.Index(output, "\n\n")
+	if idx < 0 {
+		return output
+	}
+	return strings.TrimLeft(output[idx+2:], "\n")
+}
+
+// ---------------------------------------------------------------------------
+// web_fetch 专用完整渲染
+// ---------------------------------------------------------------------------
+func renderWebFetchFull(sb *strings.Builder, result string, textWidth int, indent string, lc *Messages) {
+	wrapped := 0
+
+	// 分离头部与正文
+	parts := strings.SplitN(result, "\n\n", 2)
+	headerLines := strings.Split(parts[0], "\n")
+	for _, line := range headerLines {
+		styled := styleHeaderAccent.Render(line)
+		for _, wl := range wrapLine(styled, textWidth) {
+			if wrapped >= maxExpandedWrapped {
+				goto truncate
+			}
+			sb.WriteString(indent)
+			sb.WriteString(wl)
+			sb.WriteString("\n")
+			wrapped++
+		}
+	}
+	// 空行分隔
+	sb.WriteString(indent)
+	sb.WriteString("\n")
+	// 正文
+	if len(parts) > 1 {
+		body := strings.TrimSpace(parts[1])
+		bodyLines := strings.Split(body, "\n")
+		for _, line := range bodyLines {
+			for _, wl := range wrapLine(line, textWidth) {
+				if wrapped >= maxExpandedWrapped {
+					goto truncate
+				}
+				sb.WriteString(indent)
+				sb.WriteString(wl)
+				sb.WriteString("\n")
+				wrapped++
+			}
+		}
+	}
+	return
+
+truncate:
+	sb.WriteString(indent)
+	sb.WriteString(styleToolPreviewHint.Render(fmt.Sprintf(lc.ToolTruncatedLines, maxExpandedWrapped)))
+	sb.WriteString("\n")
+}
+
+// ---------------------------------------------------------------------------
+// Markdown 行类型
+// ---------------------------------------------------------------------------
+// MCP 工具通用渲染
+// ---------------------------------------------------------------------------
+
+// mcpToolLabel 从 MCP 工具名 mcp__<server>__<tool> 提取可读标签。
+func mcpToolLabel(toolName string) string {
+	// 去掉 mcp__ 前缀
+	rest := strings.TrimPrefix(toolName, "mcp__")
+	parts := strings.SplitN(rest, "__", 2)
+	if len(parts) == 2 {
+		return parts[0] + ":" + parts[1]
+	}
+	return rest
+}
+
+// ---------------------------------------------------------------------------
+// web_search 专用渲染
+// ---------------------------------------------------------------------------
+
+// webSearchErrorSuffix 返回 web_search 错误的简短后缀。
+func webSearchErrorSuffix(kind, msg string) string {
+	switch kind {
+	case "timeout":
+		return "(timeout)"
+	case "invalid_args":
+		return "(empty query)"
+	case "command_failed":
+		if strings.Contains(msg, "HTTP") {
+			return "(search API error)"
+		}
+		return "(search failed)"
+	default:
+		return fmt.Sprintf("(%s)", kind)
+	}
+}
+
+// parseJobStatus 从 job_output 结果提取状态行("[status: done]" 等)。
+func parseJobStatus(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "[status: ") && strings.HasSuffix(t, "]") {
+			return strings.TrimSuffix(strings.TrimPrefix(t, "[status: "), "]")
+		}
+	}
+	return ""
+}
+
+
+func countGrepMatches(output string) int {
+	first := strings.TrimSpace(strings.SplitN(output, "\n", 2)[0])
+	if !strings.HasPrefix(first, "Found ") {
+		return 0
+	}
+	rest := strings.TrimPrefix(first, "Found ")
+	if idx := strings.Index(rest, " match"); idx > 0 {
+		return atoi(takeDigits(rest))
+	}
+	return 0
+}
+
+// countNonEmptyLines 统计非空行数(glob 路径列表)。
+func countNonEmptyLines(text string) int {
+	n := 0
+	for _, l := range strings.Split(text, "\n") {
+		if strings.TrimSpace(l) != "" {
+			n++
+		}
+	}
+	return n
+}
+
+// countSearchResults 从 web_search 输出中统计结果条数。
+// 结果格式为 "N. Title"，通过匹配行首数字计数。
+func countSearchResults(output string) int {
+	count := 0
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if len(trimmed) > 2 && trimmed[0] >= '1' && trimmed[0] <= '9' && trimmed[1] == '.' && trimmed[2] == ' ' {
+			count++
+		}
+	}
+	return count
+}
+
+// parseWebSearchBody 从 web_search 输出中剥离元数据头部，返回纯结果列表。
+// 头部格式: "Search results for: \"query\"  (DuckDuckGo)  1.3s\n\n"
+func parseWebSearchBody(output string) string {
+	idx := strings.Index(output, "\n\n")
+	if idx < 0 {
+		return output
+	}
+	return strings.TrimLeft(output[idx+2:], "\n")
+}
+
+// renderWebSearchFull 渲染 web_search 的完整展开视图。
+// 头部使用强调色，结果列表保留编号格式。
+func renderWebSearchFull(sb *strings.Builder, result string, textWidth int, indent string, lc *Messages) {
+	wrapped := 0
+
+	// 分离头部与正文
+	parts := strings.SplitN(result, "\n\n", 2)
+	headerLines := strings.Split(parts[0], "\n")
+	for _, line := range headerLines {
+		styled := styleHeaderAccent.Render(line)
+		for _, wl := range wrapLine(styled, textWidth) {
+			if wrapped >= maxExpandedWrapped {
+				goto truncate
+			}
+			sb.WriteString(indent)
+			sb.WriteString(wl)
+			sb.WriteString("\n")
+			wrapped++
+		}
+	}
+	// 空行分隔
+	sb.WriteString(indent)
+	sb.WriteString("\n")
+	// 正文（结果列表）
+	if len(parts) > 1 {
+		body := strings.TrimSpace(parts[1])
+		bodyLines := strings.Split(body, "\n")
+		for _, line := range bodyLines {
+			for _, wl := range wrapLine(line, textWidth) {
+				if wrapped >= maxExpandedWrapped {
+					goto truncate
+				}
+				sb.WriteString(indent)
+				sb.WriteString(wl)
+				sb.WriteString("\n")
+				wrapped++
+			}
+		}
+	}
+
+	return
+
+truncate:
+	sb.WriteString(indent)
+	sb.WriteString(styleToolPreviewHint.Render(fmt.Sprintf(lc.ToolTruncatedLines, maxExpandedWrapped)))
+	sb.WriteString("\n")
+}
+
+// ---------------------------------------------------------------------------
+// Viewport 内容构建
+// ---------------------------------------------------------------------------
+
+// ViewportCtx 聚合 viewport 渲染所需的上下文。
+type ViewportCtx struct {
+	Asst     spinner.Model
+	Thought  spinner.Model
+	Tool     spinner.Model
+	Subagent spinner.Model
+	Glamour  *glamour.TermRenderer // nil 时回退到纯文本
+	Width    int                   // viewport 内容宽度（终端宽度 - 4）
+	Focused  bool                  // 当前段落是否处于焦点态
+	LC       *Messages             // 当前语言文案
+	CWD      string                // 工作目录,用于剥离路径前缀显示
+}
+
+// buildViewportContent 从段落列表重建 viewport 的全部文本行，同时返回每段的起始行号。
+// 对未变更（!renderDirty）且宽度匹配的段落复用缓存渲染，大幅降低流式刷新开销。
+// 返回 []string 而非单一字符串，调用方应使用 SetContentLines 避免不必要的 Split。
+// lineHint 用于预分配 lines 容量（通常传上次缓存的 len），避免 append 多次扩容。
+func buildViewportContent(paras []Paragraph, ctx ViewportCtx, focusIndex int, lineHint int) (lines []string, lineStarts []int) {
+	lineStarts = make([]int, len(paras))
+
+	// 预分配：优先用 hint，否则用段落数 × 5 粗略估算
+	capHint := lineHint
+	if capHint < len(paras)*5 {
+		capHint = len(paras) * 5
+	}
+	lines = make([]string, 0, capHint)
+
+	currentLine := 0
+
+	for i := range paras {
+		p := &paras[i]
+
+		lineStarts[i] = currentLine
+
+		// 设置当前段落的焦点状态
+		ctx.Focused = (i == focusIndex)
+
+		// 尝试复用段落级渲染缓存（行数组形式，零分配）
+		if !p.renderDirty && p.cachedLines != nil && p.cachedWidth == ctx.Width && p.cachedFocused == ctx.Focused {
+			lines = append(lines, p.cachedLines...)
+			currentLine += len(p.cachedLines)
+			continue
+		}
+
+		// 渲染到临时 buffer；段落间保留一个空行作为间距
+		var tmp strings.Builder
+		switch p.Type {
+		case paraUser:
+			renderUserPara(&tmp, p, ctx)
+		case paraAssistant:
+			renderAssistantPara(&tmp, p, ctx)
+		case paraThought:
+			renderThoughtPara(&tmp, p, ctx)
+		case paraTool:
+			renderToolPara(&tmp, p, ctx)
+		case paraSystem:
+			renderSystemPara(&tmp, p, ctx)
+		case paraSubagent:
+			renderSubagentPara(&tmp, p, ctx)
+		}
+
+		rendered := tmp.String()
+		renderedLines := strings.Split(rendered, "\n")
+
+		// 仅对非流式段落写入缓存（流式段落内容频繁变化，缓存无意义）
+		if p.State != stateStreaming {
+			p.cachedLines = renderedLines
+			p.cachedWidth = ctx.Width
+			p.cachedFocused = ctx.Focused
+			p.renderDirty = false
+		}
+
+		lines = append(lines, renderedLines...)
+		currentLine += len(renderedLines)
+	}
+
+	return lines, lineStarts
+}
+
+// renderSystemPara 渲染系统提示段落。
+// 前缀和文字按 NotifKind 着色：完成/中断 → gray，警告 → amber gold，错误 → red。
+func renderSystemPara(sb *strings.Builder, p *Paragraph, ctx ViewportCtx) {
+	prefixStr := systemPrefix(p.NotifKind) + " "
+	prefixWidth := lipgloss.Width(prefixStr)
+	indentStr := strings.Repeat(" ", prefixWidth)
+	textWidth := ctx.Width - prefixWidth
+	if textWidth < 1 {
+		textWidth = 1
+	}
+
+	textStyle := systemTextStyle(p.NotifKind)
+
+	lines := strings.Split(p.Text, "\n")
+	for i, line := range lines {
+		wrapped := wrapLine(line, textWidth)
+		for j, wl := range wrapped {
+			if i == 0 && j == 0 {
+				sb.WriteString(prefixStr)
+			} else {
+				sb.WriteString(indentStr)
+			}
+			sb.WriteString(textStyle.Render(wl))
+			sb.WriteString("\n")
+		}
+	}
+}
+
+// renderUserPara 渲染用户消息段落。
+func renderUserPara(sb *strings.Builder, p *Paragraph, ctx ViewportCtx) {
+	// 前缀对齐 thought/assistant/tool 模式：› + 空格，仅首行
+	prefixStr := userPrefix() + " "
+	prefixWidth := lipgloss.Width(prefixStr)
+	indentStr := strings.Repeat(" ", prefixWidth)
+	textWidth := ctx.Width - prefixWidth
+	if textWidth < 1 {
+		textWidth = 1
+	}
+
+	first := true
+	for _, line := range strings.Split(p.Text, "\n") {
+		wrapped := wrapLine(line, textWidth)
+		for _, wl := range wrapped {
+			if first {
+				sb.WriteString(prefixStr)
+				first = false
+			} else {
+				sb.WriteString(indentStr)
+			}
+			sb.WriteString(wl)
+			sb.WriteString("\n")
+		}
+	}
+}
+
+// renderAssistantPara 渲染 assistant 回复段落（Glamour markdown 渲染）。
+func renderAssistantPara(sb *strings.Builder, p *Paragraph, ctx ViewportCtx) {
+	streaming := p.State == stateStreaming
+	prefix := asstPrefix(ctx.Asst, streaming)
+
+	// 计算缩进：前缀 + 空格，与 thought 逻辑统一
+	prefixStr := ""
+	if prefix != "" {
+		prefixStr = prefix + " "
+	}
+	prefixWidth := lipgloss.Width(prefixStr)
+	indent := strings.Repeat(" ", prefixWidth)
+	textWidth := ctx.Width - prefixWidth
+	if textWidth < 1 {
+		textWidth = 1
+	}
+
+	if p.Text == "" {
+		sb.WriteString(prefixStr)
+		sb.WriteString("\n")
+		return
+	}
+
+	// 流式输出中跳过 Glamour（markdown 结构不完整，渲染无意义且极慢）；
+	// 仅在 done 时使用 Glamour，并缓存结果避免重复渲染。
+	rendered := p.Text
+	glamourUsed := false
+	if !streaming && ctx.Glamour != nil {
+		if p.renderedCache != "" && p.cacheWidth == ctx.Width {
+			rendered = p.renderedCache
+			glamourUsed = true
+		} else {
+			if out, err := ctx.Glamour.Render(p.Text); err == nil {
+				rendered = out
+				p.renderedCache = out
+				p.cacheWidth = ctx.Width
+				glamourUsed = true
+			}
+		}
+	}
+
+	// Glamour 输出前后可能带有多余换行，统一去除
+	rendered = strings.Trim(rendered, "\n")
+
+	// 归一化连续空行：Glamour 在不同 block 元素间输出数量不等的空行，
+	// 直接透传会导致 viewport 中行距忽大忽小。压缩为最多 1 个空行。
+	rendered = collapseBlankLines(rendered)
+
+	lines := strings.Split(rendered, "\n")
+	firstLine := true
+	for _, line := range lines {
+		wrapped := []string{line}
+		if !glamourUsed {
+			// 流式输出中用稳定截断（避免 word-wrap 断点漂移导致抖动）
+			if streaming {
+				wrapped = wrapLineStable(line, textWidth)
+			} else {
+				wrapped = wrapLine(line, textWidth)
+			}
+		}
+		for _, wl := range wrapped {
+			if firstLine {
+				sb.WriteString(prefixStr)
+				firstLine = false
+			} else {
+				sb.WriteString(indent)
+			}
+			sb.WriteString(wl)
+			sb.WriteString("\n")
+		}
+	}
+
+	// 流式输出末尾追加闪烁光标（~500ms 周期），提示 AI 仍在输出
+	if streaming && sb.Len() > 0 {
+		out := strings.TrimSuffix(sb.String(), "\n")
+		sb.Reset()
+		sb.WriteString(out)
+		if time.Now().UnixMilli()/530%2 == 0 {
+			sb.WriteString(styleUserPrefix.Render("▊"))
+		}
+		sb.WriteString("\n")
+	}
+}
+
+// renderThoughtPara 渲染 thought 段落（斜体灰色，流式时有 spinner 前缀，通过字体样式与正文区分）。
+func renderThoughtPara(sb *strings.Builder, p *Paragraph, ctx ViewportCtx) {
+	// 前缀：流式时 spinner 动画，done 时静态灰色 ·，始终保持锚点宽度
+	streaming := p.State == stateStreaming
+	prefix := thoughtPrefix(ctx.Thought, streaming)
+	if ctx.Focused {
+		prefix = styleFocusIndicator.Render(prefix)
+	}
+	prefixStr := prefix + " "
+	prefixWidth := lipgloss.Width(prefixStr)
+	indentStr := strings.Repeat(" ", prefixWidth)
+	textWidth := ctx.Width - prefixWidth
+	if textWidth < 1 {
+		textWidth = 1
+	}
+
+	switch p.State {
+	case stateStreaming:
+		// 固定 3 行高度刷新：从文本尾部反向采集足够原始行来产生 3 个换行行，
+		// 避免对全文 split+wrap（文本随流式增长，此优化将开销从 O(n) 降为 O(1)）。
+		const fixedLines = 3
+
+		rawLines := strings.Split(p.Text, "\n")
+		var visible []string
+		// 从尾部反向收集，直到获得至少 fixedLines 个换行行
+		for i := len(rawLines) - 1; i >= 0 && len(visible) < fixedLines; i-- {
+			wrapped := wrapLineStable(rawLines[i], textWidth)
+			// 反向插入：从后往前处理的原始行，其换行结果需要放在已收集行之前
+			visible = append(wrapped, visible...)
+		}
+		// 超出 fixedLines 时从头部截断
+		if len(visible) > fixedLines {
+			visible = visible[len(visible)-fixedLines:]
+		}
+
+		// 输出固定 fixedLines 行
+		for i := 0; i < fixedLines; i++ {
+			if i < len(visible) {
+				// 始终保留 spinner/前缀；截断提示 … 放在内容开头
+				pfx := indentStr
+				content := visible[i]
+				if i == 0 {
+					pfx = prefixStr
+				}
+				sb.WriteString(pfx)
+				sb.WriteString(styleThoughtStreaming.Render(content))
+			} else if i == 0 && len(visible) == 0 {
+				// 尚无思考内容，首行显示提示
+				sb.WriteString(prefixStr)
+				sb.WriteString(styleThoughtStreaming.Render(ctx.LC.ThoughtThinking))
+			} else {
+				// 补齐空行，保持前缀缩进对齐
+				if i == 0 {
+					sb.WriteString(prefixStr)
+				} else {
+					sb.WriteString(indentStr)
+				}
+			}
+			sb.WriteString("\n")
+		}
+
+	case stateCollapsed:
+		// 截取前 2 行内容 + 展开按钮；仅首行显示 · 前缀
+		lines := strings.Split(p.Text, "\n")
+		var visible []string
+		remaining := 2
+		for _, line := range lines {
+			wrapped := wrapLine(line, textWidth)
+			for _, wl := range wrapped {
+				if remaining <= 0 {
+					break
+				}
+				visible = append(visible, wl)
+				remaining--
+			}
+			if remaining <= 0 {
+				break
+			}
+		}
+
+		if len(visible) == 0 {
+			sb.WriteString(prefixStr)
+			sb.WriteString(styleThoughtCollapsed.Render(
+				fmt.Sprintf(ctx.LC.ThoughtComplete, p.ThoughtTokens)))
+			sb.WriteString("\n")
+			return
+		}
+
+		for i, wl := range visible {
+			if i == 0 {
+				sb.WriteString(prefixStr)
+			} else {
+				sb.WriteString(indentStr)
+			}
+			sb.WriteString(styleThoughtCollapsed.Render(wl))
+			sb.WriteString("\n")
+		}
+
+		// 如果总行数超过 2，显示展开按钮
+		totalWrapped := 0
+		for _, line := range lines {
+			totalWrapped += len(wrapLine(line, textWidth))
+		}
+		if totalWrapped > 2 {
+			sb.WriteString(indentStr)
+			sb.WriteString(styleThoughtExpandHint.Render(
+				fmt.Sprintf(ctx.LC.ThoughtExpandHint, p.ThoughtTokens)))
+			sb.WriteString("\n")
+		}
+
+	case stateExpanded:
+		// 完整内容，斜体暗灰；仅首行显示 · 前缀
+		first := true
+		for _, line := range strings.Split(p.Text, "\n") {
+			wrapped := wrapLine(line, textWidth)
+			for _, wl := range wrapped {
+				if first {
+					sb.WriteString(prefixStr)
+					first = false
+				} else {
+					sb.WriteString(indentStr)
+				}
+				sb.WriteString(styleThoughtContent.Render(wl))
+				sb.WriteString("\n")
+			}
+		}
+		// 折叠提示
+		sb.WriteString(indentStr)
+		sb.WriteString(styleThoughtExpandHint.Render(ctx.LC.ThoughtCollapseHint))
+		sb.WriteString("\n")
+
+	default:
+		// fallback: 完整内容渲染（兼容旧 stateDone 等状态）
+		first := true
+		for _, line := range strings.Split(p.Text, "\n") {
+			wrapped := wrapLine(line, textWidth)
+			for _, wl := range wrapped {
+				if first {
+					sb.WriteString(prefixStr)
+					first = false
+				} else {
+					sb.WriteString(indentStr)
+				}
+				sb.WriteString(styleThoughtContent.Render(wl))
+				sb.WriteString("\n")
+			}
+		}
+	}
+}
+
+// wrapLineStable 按列宽硬截断，不做 word-wrap 优化。
+// 流式输出中使用，保证换行位置仅由字符位置决定，不因后续词增长而漂移。
+func wrapLineStable(line string, maxWidth int) []string {
+	if maxWidth <= 0 {
+		return []string{""}
+	}
+	runes := []rune(line)
+	var result []string
+	for len(runes) > 0 {
+		w := 0
+		cut := 0
+		ansiHeadLen := skipAnsiSequence(runes)
+		cut = ansiHeadLen
+		for i := ansiHeadLen; i < len(runes); {
+			r := runes[i]
+			if r == 0x1b && i+1 < len(runes) && runes[i+1] == '[' {
+				skipLen := skipAnsiSequence(runes[i:])
+				i += skipLen
+				continue
+			}
+			rw := 1
+			if r >= 128 {
+				rw = lipgloss.Width(string(r))
+			}
+			if w+rw > maxWidth {
+				break
+			}
+			w += rw
+			cut = i + 1
+			i++
+		}
+		if cut == 0 {
+			cut = 1
+		}
+		result = append(result, string(runes[:cut]))
+		runes = runes[cut:]
+	}
+	if len(result) == 0 {
+		result = append(result, "")
+	}
+	return result
+}
+
+// wrapLine 按 maxWidth 列宽对单行文本智能换行，优先在空格处断行。
+// 能正确处理 ANSI 转义序列（\x1b[...m），将其视为 0 宽度且不在中间撕裂。
+func wrapLine(line string, maxWidth int) []string {
+	if maxWidth <= 0 || displayWidth(line) <= maxWidth {
+		return []string{line}
+	}
+
+	var result []string
+	runes := []rune(line)
+
+	for len(runes) > 0 {
+		w := 0
+		cut := 0
+		lastSpace := -1
+
+		// 先跳过行首的 ANSI 序列（宽度 0），避免它们在断行处被撕裂
+		ansiHeadLen := skipAnsiSequence(runes)
+		cut = ansiHeadLen
+
+		for i := ansiHeadLen; i < len(runes); {
+			r := runes[i]
+
+			// 内嵌 ANSI 转义序列整体跳过，零宽度且不可断
+			if r == 0x1b && i+1 < len(runes) && runes[i+1] == '[' {
+				skipLen := skipAnsiSequence(runes[i:])
+				i += skipLen
+				continue
+			}
+
+			rw := 1
+			if r >= 128 {
+				rw = lipgloss.Width(string(r))
+			}
+			if w+rw > maxWidth {
+				break
+			}
+			w += rw
+			cut = i + 1
+			if r == ' ' {
+				lastSpace = i
+			}
+			i++
+		}
+
+		if cut == 0 {
+			// 单字符也放不下 → 强制断在第一个 rune
+			cut = 1
+		}
+
+		if lastSpace > 0 && lastSpace >= cut*3/4 {
+			cut = lastSpace
+		}
+
+		result = append(result, string(runes[:cut]))
+
+		for cut < len(runes) && runes[cut] == ' ' {
+			cut++
+		}
+		runes = runes[cut:]
+	}
+
+	if len(result) == 0 {
+		result = append(result, "")
+	}
+	return result
+}
+
+// skipAnsiSequence 返回从 runes[0] 开始的 ANSI 转义序列长度。
+// 支持 CSI（ESC [）、OSC（ESC ]）、DCS（ESC P）等序列。
+// 若不以 ESC 开头则返回 0。
+func skipAnsiSequence(runes []rune) int {
+	if len(runes) < 2 || runes[0] != 0x1b {
+		return 0
+	}
+
+	switch runes[1] {
+	case '[': // CSI: ESC [ 参数字节(0x30-0x3F)/中间字节(0x20-0x2F) 终字节(0x40-0x7E)
+		end := 2
+		for end < len(runes) && (runes[end] < 0x40 || runes[end] > 0x7E) {
+			end++
+		}
+		if end < len(runes) {
+			end++ // 包含终字节
+		}
+		return end
+
+	case ']', 'P': // OSC (ESC ]) / DCS (ESC P): 终止于 BEL (0x07) 或 ST (ESC \)
+		end := 2
+		for end < len(runes) {
+			if runes[end] == 0x07 { // BEL
+				return end + 1
+			}
+			if runes[end] == 0x1b && end+1 < len(runes) && runes[end+1] == '\\' { // ST
+				return end + 2
+			}
+			end++
+		}
+		return len(runes) // 未终止，吞掉剩余全部
+
+	default: // 其他 ESC 序列（如 ESC 7, ESC c）：ESC + 1 字符
+		return 2
+	}
+}
+
+// displayWidth 计算字符串的终端显示宽度，ANSI 转义序列计为 0 宽度。
+// 对于 ASCII 字符（<128）直接返回宽度 1 避免 string(r) 分配和 lipgloss.Width 调用；
+// 仅非 ASCII 字符回退到 lipgloss.Width，覆盖 CJK 全角字符等场景。
+func displayWidth(s string) int {
+	w := 0
+	runes := []rune(s)
+	for i := 0; i < len(runes); {
+		r := runes[i]
+
+		// ANSI 转义序列 → 宽度 0
+		if skipLen := skipAnsiSequence(runes[i:]); skipLen > 0 {
+			i += skipLen
+			continue
+		}
+
+		if r < 128 {
+			w++
+		} else {
+			w += lipgloss.Width(string(r))
+		}
+		i++
+	}
+	return w
+}
+
+// stripToolStatusHeader 去除 tool 结果首行的状态标题（如 "✅ Command succeeded (exit=0) 123ms"），
+// 并清理尾部空行。摘要行已有 toolName + toolSuffix，颜色已传达成功/失败，无需重复。
+// 同时剥离 shell 的 "Command succeeded/failed/timed out" 头部和 "stdout:" / "stderr/stdout:" 标签行，
+// 让预览直接展示实际输出内容。
+func stripToolStatusHeader(result string) string {
+	lines := strings.Split(result, "\n")
+	start := 0
+
+	// 通用：跳过 emoji 状态标题（✅ / ❌ 开头）
+	if len(lines) > 0 {
+		first := strings.TrimSpace(lines[0])
+		if strings.HasPrefix(first, "\u2705") || strings.HasPrefix(first, "\u274c") {
+			start = 1
+		}
+	}
+
+	// Shell：跳过 "Command succeeded / failed / timed out" 状态头
+	if start == 0 && len(lines) > 0 {
+		first := strings.TrimSpace(lines[0])
+		if strings.HasPrefix(first, "Command succeeded") ||
+			strings.HasPrefix(first, "Command failed") ||
+			strings.HasPrefix(first, "Command timed out") {
+			start = 1
+
+			// 跳过 stdout/stderr 标签行和 timeout 提示行
+			if len(lines) > 1 {
+				second := strings.TrimSpace(lines[1])
+				if strings.HasPrefix(second, "stdout:") ||
+					strings.HasPrefix(second, "stderr/stdout:") ||
+					strings.HasPrefix(second, "Timeout:") {
+					start = 2
+				}
+			}
+		}
+	}
+
+	// 去除尾部空行
+	end := len(lines)
+	for end > start && strings.TrimSpace(lines[end-1]) == "" {
+		end--
+	}
+	return strings.Join(lines[start:end], "\n")
+}
+
+// renderToolPara 渲染 tool 段落。前缀对齐 thought/assistant 模式。
+func renderToolPara(sb *strings.Builder, p *Paragraph, ctx ViewportCtx) {
+	toolState := p.State
+	if p.ToolError != "" || p.ToolDenied {
+		toolState = stateError
+	}
+
+	prefix := toolPrefix(ctx.Tool, toolState, p.ToolFatal)
+	if ctx.Focused {
+		prefix = styleFocusIndicator.Render(prefix)
+	}
+	prefixStr := prefix + " "
+	prefixWidth := lipgloss.Width(prefixStr)
+	indentStr := strings.Repeat(" ", prefixWidth)
+	textWidth := ctx.Width - prefixWidth
+	if textWidth < 1 {
+		textWidth = 1
+	}
+
+	// 摘要行：仅首行有 prefixStr，后续内容行用 indentStr 对齐
+	sb.WriteString(prefixStr)
+
+	// tool 名颜色:执行中灰色,成功绿色,recoverable 错误金色,fatal 错误红色
+	toolNameStyle := styleToolPrefixPending
+	switch {
+	case toolState == stateError && p.ToolFatal:
+		toolNameStyle = styleToolPrefixErr
+	case toolState == stateError:
+		toolNameStyle = styleToolPrefixWarn
+	case toolState == stateDone || toolState == stateExpanded || toolState == stateCollapsed:
+		toolNameStyle = styleToolPrefixDone
+	}
+
+	// 构造摘要行并做宽度自适应截断
+	toolNameRendered := toolNameStyle.Render(p.ToolName)
+	suffixRendered := toolSuffix(p, ctx.LC)
+	argsDisplay := p.ToolArgs
+	// 无参数工具(如服务端 web_search)跳过 args 渲染,避免双空格空洞
+	hasArgs := argsDisplay != ""
+	fixedWidth := lipgloss.Width(toolNameRendered) + lipgloss.Width("  ") + lipgloss.Width(suffixRendered)
+	if hasArgs {
+		fixedWidth += lipgloss.Width("  ")
+	}
+	maxArgsWidth := textWidth - fixedWidth
+	if maxArgsWidth < 4 {
+		maxArgsWidth = 4
+	}
+	if displayWidth(argsDisplay) > maxArgsWidth {
+		argsDisplay = truncateByDisplayWidth(argsDisplay, maxArgsWidth)
+	}
+	sb.WriteString(toolNameRendered)
+	sb.WriteString("  ")
+	if hasArgs {
+		sb.WriteString(styleToolArgs.Render(argsDisplay))
+		sb.WriteString("  ")
+	}
+	sb.WriteString(suffixRendered)
+	sb.WriteString("\n")
+
+	// 完成/错误态的折叠预览
+	if p.State == stateDone || p.State == stateError {
+		if p.State == stateCollapsed || p.State == stateDone || p.State == stateError {
+			if p.State == stateError {
+				// 错误态:优先显示错误信息(call 视图的 diff 预览不掩盖失败原因;
+				// 展开态仍可看完整 diff)
+				renderToolPreview(sb, p, textWidth, indentStr, ctx.LC)
+			} else if p.DiffHunks != nil {
+				renderDiffPreview(sb, p.DiffHunks, textWidth, indentStr, ctx)
+			} else if p.ReadLines != nil {
+				renderReadPreview(sb, p, textWidth, indentStr, ctx.LC)
+			} else if len(p.SearchGroups) > 0 || len(p.SearchPaths) > 0 {
+				renderSearchPreview(sb, p, textWidth, indentStr, ctx)
+			} else {
+				renderToolPreview(sb, p, textWidth, indentStr, ctx.LC)
+			}
+		}
+	}
+
+	// 流式输出 —— 实时渲染已有输出（stateStreaming + 有 ToolResult 时）
+	if p.State == stateStreaming && p.ToolResult != "" {
+		renderToolStreamOutput(sb, p, textWidth, indentStr, ctx.LC)
+	}
+
+	// 展开态 —— 显示完整输出
+	if p.State == stateExpanded {
+		if p.DiffHunks != nil {
+			renderDiffView(sb, p.DiffHunks, textWidth, indentStr, ctx)
+		} else if p.ReadLines != nil {
+			renderReadView(sb, p, textWidth, indentStr, ctx)
+		} else if len(p.SearchGroups) > 0 || len(p.SearchPaths) > 0 {
+			renderSearchView(sb, p, textWidth, indentStr, ctx)
+		} else {
+			renderToolFullOutput(sb, p, textWidth, indentStr, ctx.LC)
+		}
+	}
+}
+
+// toolOutputPrefix 是工具输出预览/展开的视觉前缀（灰色竖线 + 空格，宽 2 列）。
+// 所有工具输出的折叠预览、展开态、subagent 输出均使用此前缀保持视觉一致。
+const toolOutputPrefix = "│ "
+
+// maxPreviewWrapped 是折叠预览的最大包装后行数。限制 wrapLine 膨胀后的实际显示行数，
+// 防止单条超长行（如 100KB 无换行 JSON）撑满折叠预览。
+const maxPreviewWrapped = 5
+
+// renderToolPreview 渲染工具输出的默认预览行（折叠态）。indent 由上层传入以对齐摘要行前缀。
+//
+// 错误态（ToolResult 为空但 ToolError 非空）：统一以 toolOutputPrefix 红色前缀渲染错误信息，
+// 与 shell 错误输出布局对齐，保证所有工具的失败信息在 TUI 中一致可见。
+func renderToolPreview(sb *strings.Builder, p *Paragraph, textWidth int, indent string, lc *Messages) {
+	// ask_user_question 定制渲染：显示可读的问答摘要
+	if p.ToolName == "ask_user_question" && p.ToolResult != "" {
+		preview := formatQuestionPreview(p.ToolResult, textWidth, indent, lc)
+		if preview != "" {
+			sb.WriteString(preview)
+			return
+		}
+	}
+
+	result := stripToolStatusHeader(p.ToolResult)
+	isErrorOnly := false
+	if result == "" && p.ToolError != "" {
+		result = p.ToolError
+		isErrorOnly = true
+	}
+	if result == "" {
+		return
+	}
+
+	// toolOutputPrefix 占 2 列
+	contentWidth := textWidth - lipgloss.Width(toolOutputPrefix)
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+
+	// writeWrappedPreview 将 line 包装后写入 sb，受 wrapped 计数器限制。
+	// 返回是否因达到上限而截断。
+	writeWrappedPreview := func(line string, lineStyle lipgloss.Style, wrapped *int) (truncated bool) {
+		for _, wl := range wrapLine(line, contentWidth) {
+			if *wrapped >= maxPreviewWrapped {
+				return true
+			}
+			sb.WriteString(indent)
+			sb.WriteString(lineStyle.Render(toolOutputPrefix + wl))
+			sb.WriteString("\n")
+			*wrapped++
+		}
+		return false
+	}
+
+	wrapped := 0
+	truncated := false
+
+	// ── 错误统一预览：所有工具的错误信息（ToolResult 为空、ToolError 非空）
+	//    fatal 错误以红色样式渲染，recoverable 错误以金色样式渲染。
+	if isErrorOnly {
+		errStyle := styleToolPrefixErr
+		if !p.ToolFatal {
+			errStyle = styleToolPrefixWarn
+		}
+		lines := strings.Split(result, "\n")
+		for _, line := range lines {
+			if writeWrappedPreview(line, errStyle, &wrapped) {
+				truncated = true
+				break
+			}
+		}
+		if truncated {
+			sb.WriteString(indent)
+			sb.WriteString(styleToolPreviewHint.Render(lc.ToolTruncated))
+			sb.WriteString("\n")
+		}
+		return
+	}
+
+	switch p.ToolName {
+	case "write", "edit":
+		lines := strings.Split(result, "\n")
+		for _, line := range lines {
+			lineStyle := styleToolPreview
+			if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+				lineStyle = styleDiffAdd
+			} else if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
+				lineStyle = styleDiffDel
+			}
+			if writeWrappedPreview(line, lineStyle, &wrapped) {
+				truncated = true
+				break
+			}
+		}
+
+	case "bash", "skill":
+		lineStyle := styleToolPreview
+		if p.ToolError != "" {
+			if p.ToolFatal {
+				lineStyle = styleToolPrefixErr
+			} else {
+				lineStyle = styleToolPrefixWarn
+			}
+		}
+		lines := strings.Split(result, "\n")
+		for _, line := range lines {
+			line = strings.TrimLeft(line, " ")
+			if writeWrappedPreview(line, lineStyle, &wrapped) {
+				truncated = true
+				break
+			}
+		}
+
+	case "web_fetch":
+		body := parseWebFetchBody(result)
+		lines := strings.Split(body, "\n")
+		for _, line := range lines {
+			if line == "" {
+				continue
+			}
+			if writeWrappedPreview(line, styleToolPreview, &wrapped) {
+				truncated = true
+				break
+			}
+		}
+
+	case "web_search":
+		body := parseWebSearchBody(result)
+		lines := strings.Split(body, "\n")
+		for _, line := range lines {
+			if line == "" {
+				continue
+			}
+			if writeWrappedPreview(line, styleToolPreview, &wrapped) {
+				truncated = true
+				break
+			}
+		}
+
+	default:
+		// MCP 工具：显示输出前几行作为预览
+		if strings.HasPrefix(p.ToolName, "mcp__") {
+			lines := strings.Split(result, "\n")
+			for _, line := range lines {
+				line = strings.TrimLeft(line, " ")
+				if writeWrappedPreview(line, styleToolPreview, &wrapped) {
+					truncated = true
+					break
+				}
+			}
+		}
+		// 否则无预览（read_file 等成功态不展示预览）
+	}
+
+	if truncated {
+		sb.WriteString(indent)
+		// 仅可段落聚焦的工具展示 Enter 提示（shell / web_fetch），
+		// write_file / edit_file 等不可聚焦的工具仅显示截断标记。
+		switch p.ToolName {
+		case "bash", "web_fetch", "web_search", "skill":
+			sb.WriteString(styleToolPreviewHint.Render(lc.ToolExpandAllHint))
+		default:
+			sb.WriteString(styleToolPreviewHint.Render(lc.ToolTruncated))
+		}
+		sb.WriteString("\n")
+	}
+}
+
+// renderToolStreamOutput 渲染流式工具输出，与 renderThoughtPara 的 fixedLines 反向收集逻辑一致。
+// 从尾部反向采集直到获得 fixedLines 个 wrap 后可见行，不显示截断提示（截断是隐式的）。
+func renderToolStreamOutput(sb *strings.Builder, p *Paragraph, textWidth int, indent string, lc *Messages) {
+	result := strings.TrimRight(p.ToolResult, "\n")
+	if result == "" {
+		return
+	}
+
+	contentWidth := textWidth - lipgloss.Width(toolOutputPrefix)
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+
+	const fixedLines = 5
+
+	rawLines := strings.Split(result, "\n")
+	var visible []string
+	// 从尾部反向收集，直到获得至少 fixedLines 个 wrap 后的可见行
+	for i := len(rawLines) - 1; i >= 0 && len(visible) < fixedLines; i-- {
+		if rawLines[i] == "" {
+			continue
+		}
+		wrapped := wrapLineStable(rawLines[i], contentWidth)
+		visible = append(wrapped, visible...)
+	}
+	// 超出 fixedLines 时从头部截断
+	if len(visible) > fixedLines {
+		visible = visible[len(visible)-fixedLines:]
+	}
+
+	for _, wl := range visible {
+		sb.WriteString(indent)
+		sb.WriteString(styleToolPreview.Render(toolOutputPrefix))
+		sb.WriteString(wl)
+		sb.WriteString("\n")
+	}
+}
+
+// maxExpandedWrapped 是展开态的最大包装后行数。防止单条超长行在展开时产生海量 viewport 行。
+const maxExpandedWrapped = 2000
+
+// renderToolFullOutput 渲染工具的完整输出（展开态）。indent 由上层传入以对齐摘要行前缀。
+// 当 ToolResult 为空但 ToolError 非空时（如 stateError → stateExpanded 展开），
+// 回退到渲染错误信息。
+func renderToolFullOutput(sb *strings.Builder, p *Paragraph, textWidth int, indent string, lc *Messages) {
+	if textWidth < 1 {
+		textWidth = 1
+	}
+
+	result := stripToolStatusHeader(p.ToolResult)
+	if result == "" && p.ToolError != "" {
+		result = p.ToolError
+	}
+	if result == "" {
+		return
+	}
+
+	wrapped := 0
+	truncated := false
+
+	switch p.ToolName {
+	case "ask_user_question":
+		// 展开态：显示每个问题的完整信息
+		sb.WriteString(formatQuestionExpanded(p.ToolResult, indent, textWidth, lc))
+		return
+	case "read":
+		codeTextWidth := textWidth - 9
+		if codeTextWidth < 1 {
+			codeTextWidth = 1
+		}
+		lines := strings.Split(result, "\n")
+		for i, line := range lines {
+			lineNum := styleMuted.Render(fmt.Sprintf("%4d │", i+1))
+			wlines := wrapLine(line, codeTextWidth)
+			for j, wl := range wlines {
+				if wrapped >= maxExpandedWrapped {
+					truncated = true
+					break
+				}
+				sb.WriteString(indent)
+				if j == 0 {
+					sb.WriteString(lineNum)
+				} else {
+					sb.WriteString(styleMuted.Render("     │"))
+				}
+				sb.WriteString(" ")
+				sb.WriteString(styleMDCode.Render(wl))
+				sb.WriteString("\n")
+				wrapped++
+			}
+			if truncated {
+				break
+			}
+		}
+
+	case "write", "edit":
+		for _, line := range strings.Split(result, "\n") {
+			wlines := wrapLine(line, textWidth)
+			for _, wl := range wlines {
+				if wrapped >= maxExpandedWrapped {
+					truncated = true
+					break
+				}
+				sb.WriteString(indent)
+				if strings.HasPrefix(wl, "@@") {
+					sb.WriteString(styleHeaderAccent.Render(wl))
+				} else if strings.HasPrefix(wl, "+") && !strings.HasPrefix(wl, "+++") {
+					sb.WriteString(styleDiffAdd.Render(wl))
+				} else if strings.HasPrefix(wl, "-") && !strings.HasPrefix(wl, "---") {
+					sb.WriteString(styleDiffDel.Render(wl))
+				} else {
+					sb.WriteString(styleToolExpanded.Render(wl))
+				}
+				sb.WriteString("\n")
+				wrapped++
+			}
+			if truncated {
+				break
+			}
+		}
+
+	case "bash":
+		contentWidth := textWidth - lipgloss.Width(toolOutputPrefix)
+		if contentWidth < 1 {
+			contentWidth = 1
+		}
+		rawLines := strings.Split(result, "\n")
+		for _, line := range rawLines {
+			line = strings.TrimLeft(line, " ")
+			wlines := wrapLine(line, contentWidth)
+			for _, wl := range wlines {
+				if wrapped >= maxExpandedWrapped {
+					truncated = true
+					break
+				}
+				sb.WriteString(indent)
+				sb.WriteString(styleToolExpanded.Render(toolOutputPrefix))
+				sb.WriteString(wl)
+				sb.WriteString("\n")
+				wrapped++
+			}
+			if truncated {
+				break
+			}
+		}
+
+	case "web_fetch":
+		renderWebFetchFull(sb, result, textWidth, indent, lc)
+		return
+
+	case "web_search":
+		renderWebSearchFull(sb, result, textWidth, indent, lc)
+		return
+
+	default:
+		contentWidth := textWidth - lipgloss.Width(toolOutputPrefix)
+		if contentWidth < 1 {
+			contentWidth = 1
+		}
+		for _, line := range strings.Split(result, "\n") {
+			wlines := wrapLine(line, contentWidth)
+			for _, wl := range wlines {
+				if wrapped >= maxExpandedWrapped {
+					truncated = true
+					break
+				}
+				sb.WriteString(indent)
+				sb.WriteString(styleToolExpanded.Render(toolOutputPrefix))
+				sb.WriteString(wl)
+				sb.WriteString("\n")
+				wrapped++
+			}
+			if truncated {
+				break
+			}
+		}
+	}
+
+	if truncated {
+		sb.WriteString(indent)
+		sb.WriteString(styleToolPreviewHint.Render(fmt.Sprintf(lc.ToolTruncatedLines, maxExpandedWrapped)))
+		sb.WriteString("\n")
+	}
+
+	// 折叠提示 — 仅可段落聚焦的工具（shell / web_fetch / web_search）展示 Enter 提示
+	switch p.ToolName {
+	case "bash", "web_fetch", "web_search":
+		sb.WriteString(indent)
+		sb.WriteString(styleToolPreviewHint.Render(lc.ToolCollapseHint))
+		sb.WriteString("\n")
+	}
+}
+
+// renderReadPreview 渲染 read 视图的折叠预览(前 maxPreviewWrapped 行,
+// 行号 + 内容,与 diff 预览的视觉前缀一致)。
+func renderReadPreview(sb *strings.Builder, p *Paragraph, textWidth int, indent string, lc *Messages) {
+	contentWidth := textWidth - lipgloss.Width(toolOutputPrefix)
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+	wrapped := 0
+	truncated := false
+	for _, l := range p.ReadLines {
+		line := fmt.Sprintf("%d │ %s", l.Number, l.Text)
+		for _, wl := range wrapLine(line, contentWidth) {
+			if wrapped >= maxPreviewWrapped {
+				truncated = true
+				break
+			}
+			sb.WriteString(indent)
+			sb.WriteString(styleToolPreview.Render(toolOutputPrefix + wl))
+			sb.WriteString("\n")
+			wrapped++
+		}
+		if truncated {
+			break
+		}
+	}
+	if truncated {
+		sb.WriteString(indent)
+		sb.WriteString(styleToolPreviewHint.Render(lc.ToolTruncated))
+		sb.WriteString("\n")
+	}
+}
+
+// renderReadView 渲染 read 视图的完整展开态:行号列(按最大行号定宽)+ 内容行,
+// 行号灰、内容 muted,复用 diff 的行号视觉。
+func renderReadView(sb *strings.Builder, p *Paragraph, textWidth int, indent string, ctx ViewportCtx) {
+	numWidth := 4
+	for _, l := range p.ReadLines {
+		if w := digitCount(l.Number); w > numWidth {
+			numWidth = w
+		}
+	}
+	codeWidth := textWidth - numWidth - 2 // "N " 行号 + 分隔符
+	if codeWidth < 1 {
+		codeWidth = 1
+	}
+
+	wrapped := 0
+	truncated := false
+	for _, l := range p.ReadLines {
+		wlines := wrapLine(l.Text, codeWidth)
+		for wi, wl := range wlines {
+			if wrapped >= maxExpandedWrapped {
+				truncated = true
+				break
+			}
+			sb.WriteString(indent)
+			if wi == 0 {
+				numStr := fmt.Sprintf("%*d ", numWidth, l.Number)
+				sb.WriteString(styleLineNum.Render(numStr))
+				sb.WriteString(styleToolPreview.Render("│ " + wl))
+			} else {
+				sb.WriteString(styleLineNum.Render(fmt.Sprintf("%*s ", numWidth, "")))
+				sb.WriteString(styleToolPreview.Render("│ " + wl))
+			}
+			sb.WriteString("\n")
+			wrapped++
+		}
+		if truncated {
+			break
+		}
+	}
+	if truncated {
+		sb.WriteString(indent)
+		sb.WriteString(styleToolPreviewHint.Render(fmt.Sprintf(ctx.LC.ToolTruncatedLines, maxExpandedWrapped)))
+		sb.WriteString("\n")
+	}
+}
+
+// renderSearchPreview 渲染 search 视图的折叠预览(前 maxPreviewWrapped 行)。
+// matches shape:"path:line" 紧凑行;paths shape:路径行。
+func renderSearchPreview(sb *strings.Builder, p *Paragraph, textWidth int, indent string, ctx ViewportCtx) {
+	contentWidth := textWidth - lipgloss.Width(toolOutputPrefix)
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+	wrapped := 0
+	truncated := false
+	write := func(line string) {
+		for _, wl := range wrapLine(line, contentWidth) {
+			if wrapped >= maxPreviewWrapped {
+				truncated = true
+				return
+			}
+			sb.WriteString(indent)
+			sb.WriteString(styleToolPreview.Render(toolOutputPrefix + wl))
+			sb.WriteString("\n")
+			wrapped++
+		}
+	}
+	if len(p.SearchGroups) > 0 {
+		for _, g := range p.SearchGroups {
+			for _, mm := range g.Matches {
+				write(fmt.Sprintf("%s:%d  %s", stripCWDPrefix(g.Path, ctx.CWD), mm.LineNumber, mm.Line))
+				if truncated {
+					break
+				}
+			}
+			if truncated {
+				break
+			}
+		}
+	} else {
+		for _, path := range p.SearchPaths {
+			write(stripCWDPrefix(path, ctx.CWD))
+			if truncated {
+				break
+			}
+		}
+	}
+	if truncated {
+		sb.WriteString(indent)
+		sb.WriteString(styleToolPreviewHint.Render(ctx.LC.ToolTruncated))
+		sb.WriteString("\n")
+	}
+}
+
+// renderSearchView 渲染 search 视图的完整展开态。
+// matches shape:文件头(── path ──) + 行号 + 匹配行;paths shape:路径列表。
+// truncated 时显示总数提示。
+func renderSearchView(sb *strings.Builder, p *Paragraph, textWidth int, indent string, ctx ViewportCtx) {
+	if len(p.SearchGroups) > 0 {
+		var lastPath string
+		wrapped := 0
+		truncated := false
+		for gi, g := range p.SearchGroups {
+			path := stripCWDPrefix(g.Path, ctx.CWD)
+			if path != lastPath {
+				lastPath = path
+				if gi > 0 {
+					sb.WriteString(indent)
+					sb.WriteString(styleMuted.Render(strings.Repeat("─", textWidth)))
+					sb.WriteString("\n")
+				}
+				sb.WriteString(indent)
+				sb.WriteString(styleDiffHeader.Render("── " + path + " ──"))
+				sb.WriteString("\n")
+			}
+			numWidth := 4
+			for _, mm := range g.Matches {
+				if w := digitCount(mm.LineNumber); w > numWidth {
+					numWidth = w
+				}
+			}
+			codeWidth := textWidth - numWidth - 2
+			if codeWidth < 1 {
+				codeWidth = 1
+			}
+			for _, mm := range g.Matches {
+				for wi, wl := range wrapLine(mm.Line, codeWidth) {
+					if wrapped >= maxExpandedWrapped {
+						truncated = true
+						break
+					}
+					sb.WriteString(indent)
+					if wi == 0 {
+						numStr := fmt.Sprintf("%*d ", numWidth, mm.LineNumber)
+						sb.WriteString(styleLineNum.Render(numStr))
+						sb.WriteString(styleToolPreview.Render("│ " + wl))
+					} else {
+						sb.WriteString(styleLineNum.Render(fmt.Sprintf("%*s ", numWidth, "")))
+						sb.WriteString(styleToolPreview.Render("│ " + wl))
+					}
+					sb.WriteString("\n")
+					wrapped++
+				}
+				if truncated {
+					break
+				}
+			}
+			if truncated {
+				break
+			}
+		}
+		if truncated {
+			sb.WriteString(indent)
+			sb.WriteString(styleToolPreviewHint.Render(fmt.Sprintf(ctx.LC.ToolTruncatedLines, maxExpandedWrapped)))
+			sb.WriteString("\n")
+		}
+	} else {
+		wrapped := 0
+		truncated := false
+		for _, path := range p.SearchPaths {
+			for _, wl := range wrapLine(stripCWDPrefix(path, ctx.CWD), textWidth-2) {
+				if wrapped >= maxExpandedWrapped {
+					truncated = true
+					break
+				}
+				sb.WriteString(indent)
+				sb.WriteString(styleToolPreview.Render(toolOutputPrefix + wl))
+				sb.WriteString("\n")
+				wrapped++
+			}
+			if truncated {
+				break
+			}
+		}
+		if truncated {
+			sb.WriteString(indent)
+			sb.WriteString(styleToolPreviewHint.Render(fmt.Sprintf(ctx.LC.ToolTruncatedLines, maxExpandedWrapped)))
+			sb.WriteString("\n")
+		}
+	}
+	if p.SearchTruncated {
+		sb.WriteString(indent)
+		sb.WriteString(styleToolPreviewHint.Render(fmt.Sprintf(ctx.LC.SearchTruncatedHint, p.SearchTotal)))
+		sb.WriteString("\n")
+	}
+}
+
+// renderDiffPreview 渲染 diff 的折叠预览。受 maxPreviewWrapped 约束，
+// 防止单条超长行撑满预览。edit_file 不参与段落聚焦，截断时仅显示标记。
+func renderDiffPreview(sb *strings.Builder, hunks []DiffHunk, textWidth int, indent string, ctx ViewportCtx) {
+	if len(hunks) == 0 {
+		return
+	}
+
+	contentWidth := textWidth - lipgloss.Width(toolOutputPrefix)
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+
+	wrapped := 0
+	truncated := false
+	for _, h := range hunks {
+		for _, l := range h.Lines {
+			style := lineStyle(l.Kind)
+			prefix := linePrefix(l.Kind)
+			line := prefix + l.Content
+			for _, wl := range wrapLine(line, contentWidth) {
+				if wrapped >= maxPreviewWrapped {
+					truncated = true
+					break
+				}
+				sb.WriteString(indent)
+				sb.WriteString(style.Render(toolOutputPrefix + wl))
+				sb.WriteString("\n")
+				wrapped++
+			}
+			if truncated {
+				break
+			}
+		}
+		if truncated {
+			break
+		}
+	}
+	if truncated {
+		sb.WriteString(indent)
+		sb.WriteString(styleToolPreviewHint.Render(ctx.LC.ToolTruncated))
+		sb.WriteString("\n")
+	}
+}
+
+// renderDiffView 渲染完整的统一 diff 视图（展开态），遵循 POSIX unified diff 格式：
+//   - 前缀为单字符（+ / - / 空格）
+//   - hunk header 在 count=1 时省略 ",1"
+//   - 附加虚行号列（灰色），不影响 diff 语义
+//
+// 受 maxExpandedWrapped 约束，防止超长行导致海量输出。
+func renderDiffView(sb *strings.Builder, hunks []DiffHunk, textWidth int, indent string, ctx ViewportCtx) {
+	if len(hunks) == 0 {
+		return
+	}
+
+	// 计算行号列宽度（最多 4 位）
+	numWidth := 4
+	for _, h := range hunks {
+		maxNum := h.OldStart + h.OldCount
+		if n := h.NewStart + h.NewCount; n > maxNum {
+			maxNum = n
+		}
+		if w := digitCount(maxNum); w > numWidth {
+			numWidth = w
+		}
+	}
+
+	// 单字符前缀 + 行号列宽度 + 续行缩进（1 空格 = 前缀宽度）
+	codeWidth := textWidth - numWidth - 2 // numStr("  5 ") + prefix(1)
+	if codeWidth < 1 {
+		codeWidth = 1
+	}
+
+	wrapped := 0
+	truncated := false
+
+	var lastFilePath string
+	for hi, h := range hunks {
+		// 文件路径变化时（多文件编辑），渲染 文件头
+		if h.FilePath != "" && h.FilePath != lastFilePath {
+			lastFilePath = h.FilePath
+			if hi > 0 {
+				// 文件间用双线分隔
+				sb.WriteString(indent)
+				sb.WriteString(styleMuted.Render(strings.Repeat("═", textWidth)))
+				sb.WriteString("\n")
+			}
+			sb.WriteString(indent)
+			sb.WriteString(styleDiffHeader.Render("── " + stripCWDPrefix(h.FilePath, ctx.CWD) + " ──"))
+			sb.WriteString("\n")
+		} else if hi > 0 {
+			// 同文件 hunks 之间单线分隔（兼容旧行为及单文件多 hunk 场景）
+			sb.WriteString(indent)
+			sb.WriteString(styleMuted.Render(strings.Repeat("─", textWidth)))
+			sb.WriteString("\n")
+		}
+
+		// @@ header（count=1 时省略 ",1"）；heading 过长时截断，防止终端换行造成视觉混乱
+		header := fmt.Sprintf("@@ -%s +%s @@", hunkRange(h.OldStart, h.OldCount), hunkRange(h.NewStart, h.NewCount))
+		if h.Heading != "" {
+			full := header + " " + h.Heading
+			if len(full) > textWidth {
+				avail := textWidth - len(header) - 1 // -1 for space
+				if avail > 0 {
+					heading := h.Heading
+					if len(heading) > avail {
+						heading = heading[:avail]
+					}
+					header += " " + heading
+				}
+			} else {
+				header = full
+			}
+		}
+		sb.WriteString(indent)
+		sb.WriteString(styleDiffHeader.Render(header))
+		sb.WriteString("\n")
+
+		for _, l := range h.Lines {
+			prefix, styleContent := diffLinePrefixAndStyle(l.Kind)
+			// 行号：删除显示旧行号，新增显示新行号，上下文显示旧行号
+			var num int
+			switch l.Kind {
+			case DiffDel:
+				num = l.OldNum
+			case DiffAdd:
+				num = l.NewNum
+			default:
+				num = l.OldNum
+			}
+			numStr := fmt.Sprintf("%*d ", numWidth, num)
+
+			wlines := wrapLine(l.Content, codeWidth)
+			for wi, wl := range wlines {
+				if wrapped >= maxExpandedWrapped {
+					truncated = true
+					break
+				}
+				sb.WriteString(indent)
+				if wi == 0 {
+					// 首行：行号 + 前缀 + 内容
+					sb.WriteString(styleLineNum.Render(numStr))
+					sb.WriteString(styleContent.Render(prefix + wl))
+				} else {
+					// 续行：空行号 + 单空格缩进
+					sb.WriteString(styleLineNum.Render(fmt.Sprintf("%*s ", numWidth, "")))
+					sb.WriteString(styleContent.Render(" " + wl))
+				}
+				sb.WriteString("\n")
+				wrapped++
+			}
+			if truncated {
+				break
+			}
+		}
+
+		if truncated {
+			break
+		}
+	}
+
+	if truncated {
+		sb.WriteString(indent)
+		sb.WriteString(styleToolPreviewHint.Render(fmt.Sprintf(ctx.LC.ToolTruncatedLines, maxExpandedWrapped)))
+		sb.WriteString("\n")
+	}
+}
+
+// digitCount 返回 n 的十进制位数。
+func digitCount(n int) int {
+	if n <= 0 {
+		return 1
+	}
+	d := 0
+	for n > 0 {
+		n /= 10
+		d++
+	}
+	return d
+}
+
+// hunkRange 返回 unified diff hunk header 中的 range 字符串。
+// count=1 时省略 ",1"，与 git diff 行为一致。
+func hunkRange(start, count int) string {
+	if count == 1 {
+		return fmt.Sprintf("%d", start)
+	}
+	return fmt.Sprintf("%d,%d", start, count)
+}
+
+// lineStyle 根据 DiffLineKind 返回对应的前景色样式。
+func lineStyle(kind DiffLineKind) lipgloss.Style {
+	switch kind {
+	case DiffAdd:
+		return styleDiffAdd
+	case DiffDel:
+		return styleDiffDel
+	case DiffHeader:
+		return styleDiffHeader
+	default:
+		return styleToolPreview
+	}
+}
+
+// linePrefix 根据 DiffLineKind 返回对应的前缀字符。
+// 严格遵循 unified diff 单字符前缀规范：+ 新增，- 删除，空格 上下文。
+func linePrefix(kind DiffLineKind) string {
+	switch kind {
+	case DiffAdd:
+		return "+"
+	case DiffDel:
+		return "-"
+	case DiffHeader:
+		return "@@"
+	default:
+		return " "
+	}
+}
+
+// diffLinePrefixAndStyle 根据 DiffLineKind 返回首行前缀和续行样式。
+// 严格遵循 unified diff 单字符前缀规范。
+func diffLinePrefixAndStyle(kind DiffLineKind) (prefix string, style lipgloss.Style) {
+	switch kind {
+	case DiffAdd:
+		return "+", styleDiffAddBG
+	case DiffDel:
+		return "-", styleDiffDelBG
+	case DiffCtx:
+		return " ", styleDiffCtx
+	default:
+		return " ", styleToolExpanded
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 辅助：检测字符串内容类型
+// ---------------------------------------------------------------------------
+
+// collapseBlankLines 将 2 个以上连续换行压缩为最多 1 个空行（即 \n\n\n+ → \n\n）。
+// 用于归一化 Glamour 在不同 block 元素间输出的不等量空行。
+func collapseBlankLines(s string) string {
+	for strings.Contains(s, "\n\n\n") {
+		s = strings.ReplaceAll(s, "\n\n\n", "\n\n")
+	}
+	return s
+}
+
+// countHunks 统计 hunk 文本中 @@ 头的数量。
+func countHunks(hunk string) int {
+	n := 0
+	for _, line := range strings.Split(hunk, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "@@") {
+			n++
+		}
+	}
+	return n
+}
+
+// extractPatchPaths 从 patch 文本中提取 *** Update File: 指定的文件路径。
+func extractPatchPaths(patch string) []string {
+	var paths []string
+	seen := make(map[string]bool)
+	for _, line := range strings.Split(patch, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "*** Update File:") {
+			p := strings.TrimSpace(strings.TrimPrefix(trimmed, "*** Update File:"))
+			if p != "" && !seen[p] {
+				seen[p] = true
+				paths = append(paths, p)
+			}
+		}
+	}
+	return paths
+}
+
+// findFirstPromptPos 在可能含 ANSI 转义序列的字符串中查找第一个 "  "（2 空格）的位置。
+// 返回下标（不含前导 ANSI），找不到返回 -1。
+func findFirstPromptPos(s string) int {
+	runes := []rune(s)
+	i := 0
+	for i < len(runes) {
+		if runes[i] == 0x1b {
+			skip := skipAnsiSequence(runes[i:])
+			i += skip
+			continue
+		}
+		if runes[i] == ' ' && i+1 < len(runes) && runes[i+1] == ' ' {
+			return i
+		}
+		i++
+	}
+	return -1
+}
+
+// ---------------------------------------------------------------------------
+// Subagent 段落渲染
+// ---------------------------------------------------------------------------
+
+// renderSubagentPara 渲染子 agent 段落，完全对齐 renderToolPara 的样式。
+// 摘要行格式：● agent  general-purpose · description  (2轮, 2.1s, ↑1.2K, ↓2.0K)
+func renderSubagentPara(sb *strings.Builder, p *Paragraph, ctx ViewportCtx) {
+	subState := p.State
+	if p.ToolError != "" {
+		subState = stateError
+	}
+
+	// ── 前缀：使用独立的 subagent spinner，区别于普通工具 ──
+	prefix := toolPrefix(ctx.Subagent, subState, false)
+	if ctx.Focused {
+		prefix = styleFocusIndicator.Render(prefix)
+	}
+	prefixStr := prefix + " "
+	prefixWidth := lipgloss.Width(prefixStr)
+	indentStr := strings.Repeat(" ", prefixWidth)
+	textWidth := ctx.Width - prefixWidth
+	if textWidth < 1 {
+		textWidth = 1
+	}
+	// agent 类型标签颜色:执行中灰色,成功绿色,错误红/金
+
+	toolNameStyle := styleToolPrefixPending
+	switch {
+	case subState == stateError && p.ToolFatal:
+		toolNameStyle = styleToolPrefixErr
+	case subState == stateError:
+		toolNameStyle = styleToolPrefixWarn
+	case subState == stateDone || subState == stateExpanded || subState == stateCollapsed:
+		toolNameStyle = styleToolPrefixDone
+	}
+	toolNameRendered := toolNameStyle.Render("agent")
+
+	// ── args：agent 类型 · description ──
+	agentLabel := p.SubagentType
+	if agentLabel == "" {
+		agentLabel = "fork"
+	}
+	desc := p.SubagentPrompt
+	if desc == "" {
+		desc = p.Text
+	}
+	argsText := agentLabel + " · " + desc
+
+	// ── suffix（对齐 bash 的 toolSuffix 格式） ──
+	suffixRendered := subagentSuffix(p, ctx.LC)
+
+	// ── 摘要行宽度自适应 ──
+	fixedWidth := lipgloss.Width(toolNameRendered) + lipgloss.Width("  ") + lipgloss.Width("  ") + lipgloss.Width(suffixRendered)
+	maxArgsWidth := textWidth - fixedWidth
+	if maxArgsWidth < 4 {
+		maxArgsWidth = 4
+	}
+	if displayWidth(argsText) > maxArgsWidth {
+		argsText = truncateByDisplayWidth(argsText, maxArgsWidth)
+	}
+
+	sb.WriteString(prefixStr)
+	sb.WriteString(toolNameRendered)
+	sb.WriteString("  ")
+	sb.WriteString(styleToolArgs.Render(argsText))
+	sb.WriteString("  ")
+	sb.WriteString(suffixRendered)
+	sb.WriteString("\n")
+
+	// ── 流式输出：对齐主 TUI shell 流式，用 p.Text 尾 5 行渲染 ──
+	// 注意：不能用 renderSubagentBody 遍历全部事件——流式期间 SubagentEvents 包含
+	// 大量 SubagentToolStream 增量块，全量渲染会导致段落无限膨胀（输出泄漏）。
+	if p.State == stateStreaming && p.Text != "" {
+		renderSubagentStreamLines(sb, p.Text, textWidth, indentStr, 5, false)
+		return
+	}
+
+	// ── 完成/折叠：灰色预览（对齐 shell 折叠预览） ──
+	if p.State == stateDone || p.State == stateCollapsed {
+		renderSubagentStreamLines(sb, p.Text, textWidth, indentStr, 5, true)
+		sb.WriteString(indentStr)
+		sb.WriteString(styleToolPreviewHint.Render(ctx.LC.ToolExpandAllHint))
+		sb.WriteString("\n")
+		return
+	}
+
+	// ── 错误态 ──
+	if p.State == stateError {
+		renderSubagentStreamLines(sb, p.Text, textWidth, indentStr, 5, true)
+		return
+	}
+
+	// ── 展开态：结构化渲染（Phase 2） ──
+	if p.State == stateExpanded {
+		renderSubagentBody(sb, p, textWidth, indentStr)
+	}
+}
+
+// renderSubagentStreamLines 渲染固定行数、尾部内容。
+// muted=true 时全文灰色（折叠预览），false 时仅前缀灰色（流式，对齐 shell）。
+func renderSubagentStreamLines(sb *strings.Builder, text string, textWidth int, indent string, fixedLines int, muted bool) {
+	text = strings.TrimRight(text, "\n")
+	if text == "" {
+		return
+	}
+	contentWidth := textWidth - lipgloss.Width(toolOutputPrefix)
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+	rawLines := strings.Split(text, "\n")
+	var visible []string
+	for i := len(rawLines) - 1; i >= 0 && len(visible) < fixedLines; i-- {
+		if rawLines[i] == "" {
+			continue
+		}
+		wrapped := wrapLineStable(rawLines[i], contentWidth)
+		visible = append(wrapped, visible...)
+	}
+	if len(visible) > fixedLines {
+		visible = visible[len(visible)-fixedLines:]
+	}
+	for _, wl := range visible {
+		sb.WriteString(indent)
+		if muted {
+			sb.WriteString(styleToolPreview.Render(toolOutputPrefix + wl))
+		} else {
+			sb.WriteString(styleToolPreview.Render(toolOutputPrefix))
+			sb.WriteString(wl)
+		}
+		sb.WriteString("\n")
+	}
+}
+
+// subagentSuffix 返回子 agent 摘要行后缀，对齐 bash 的 toolSuffix 格式。
+func subagentSuffix(p *Paragraph, lc *Messages) string {
+	if p.State == stateStreaming {
+		return ""
+	}
+	if p.ToolError != "" {
+		return "(interrupted)"
+	}
+	suffix := ""
+	if p.SubagentModel != "" {
+		suffix = p.SubagentModel + ", "
+	}
+	if p.SubagentTurns > 0 {
+		suffix += fmt.Sprintf(lc.SubagentTurnsFmt, p.SubagentTurns)
+	}
+	if p.ToolDurMs > 0 {
+		if suffix != "" && p.SubagentTurns > 0 {
+			suffix += ", "
+		}
+		suffix += formatDuration(p.ToolDurMs)
+	}
+	if p.SubagentPromptTok > 0 {
+		suffix += fmt.Sprintf(", ↑%s", formatTokens(p.SubagentPromptTok))
+	}
+	if p.SubagentComplTok > 0 {
+		suffix += fmt.Sprintf(", ↓%s", formatTokens(p.SubagentComplTok))
+	}
+	if suffix == "" {
+		return ""
+	}
+	return "(" + suffix + ")"
+}
+
+// renderSubagentBody 按结构化事件列表渲染子 agent body（Phase 2）。
+// 样式完全对标主 TUI 段落渲染：thought dimmed 斜体、tool 名绿色粗体 + args 代码色、
+// tool 输出 │ 前缀 muted + 内容默认色、text 默认色。
+// 无结构化事件时降级到 p.Text 纯文本渲染。
+func renderSubagentBody(sb *strings.Builder, p *Paragraph, textWidth int, indent string) {
+	events := p.SubagentEvents
+	if len(events) == 0 {
+		// 降级：无结构化事件时回退到 Text 渲染
+		if p.Text != "" {
+			renderSubagentStreamLines(sb, p.Text, textWidth, indent, 2000, true)
+		}
+		return
+	}
+	contentWidth := textWidth - lipgloss.Width(toolOutputPrefix)
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+	isExpanded := p.State == stateExpanded
+
+	var prevKind SubagentEventKind
+	for _, ev := range events {
+		// 展开态跳过流式增量块：它们仅用于流式实时显示，
+		// 最终结果已由同名 SubagentToolResult 承载（handleSubagentEvent 会移除它们）。
+		// 若工具尚未完成时用户展开，跳过可避免碎片化渲染。
+		if ev.Kind == SubagentToolStream {
+			continue
+		}
+
+		// 事件类型切换时添加空行分隔（提升可读性）
+		if prevKind != 0 && prevKind != ev.Kind {
+			sb.WriteString(indent)
+			sb.WriteString("\n")
+		}
+		prevKind = ev.Kind
+
+		switch ev.Kind {
+		case SubagentThought:
+			// 对标主 TUI 的 renderThoughtPara：dimmed 斜体
+			for _, line := range strings.Split(strings.TrimRight(ev.TextDelta, "\n"), "\n") {
+				for _, wl := range wrapLineStable(line, contentWidth) {
+					sb.WriteString(indent)
+					sb.WriteString(styleThoughtContent.Render(wl))
+					sb.WriteString("\n")
+				}
+			}
+		case SubagentText:
+			// 对标主 TUI 的 renderAssistantPara：默认色
+			for _, line := range strings.Split(strings.TrimRight(ev.TextDelta, "\n"), "\n") {
+				for _, wl := range wrapLineStable(line, contentWidth) {
+					sb.WriteString(indent)
+					sb.WriteString(wl)
+					sb.WriteString("\n")
+				}
+			}
+		case SubagentToolStart:
+			// 对标主 TUI renderToolPara 摘要行：● + tool 名绿色粗体 + args 代码色
+			sb.WriteString(indent)
+			sb.WriteString(styleToolPrefixDone.Render("●"))
+			sb.WriteString(" ")
+			sb.WriteString(styleToolPrefixDone.Render(ev.ToolName))
+			sb.WriteString("  ")
+			sb.WriteString(styleToolArgs.Render(ev.ToolArgs))
+			sb.WriteString("\n")
+		case SubagentToolResult:
+			// 对标主 TUI renderToolStreamOutput / renderToolFullOutput：
+			// toolOutputPrefix 前缀 muted，内容默认色。展开态不限行数。
+			renderSubagentToolOutput(sb, ev.ToolResult, contentWidth, indent, isExpanded)
+		}
+	}
+}
+
+// renderSubagentToolOutput 渲染工具输出行（│ 前缀 muted，展开态不限行数，折叠态 tail-5）。
+func renderSubagentToolOutput(sb *strings.Builder, output string, contentWidth int, indent string, isExpanded bool) {
+	if output == "" {
+		return
+	}
+	lines := strings.Split(strings.TrimRight(output, "\n"), "\n")
+	maxLines := 5 // 非展开态：对齐主 TUI 流式 tail-5
+	if isExpanded {
+		maxLines = 2000 // 展开态：对齐主 TUI renderToolFullOutput
+	}
+	truncated := len(lines) > maxLines
+	if truncated {
+		lines = lines[len(lines)-maxLines:]
+	}
+	for _, line := range lines {
+		for _, wl := range wrapLineStable(line, contentWidth) {
+			sb.WriteString(indent)
+			sb.WriteString(styleToolPreview.Render(toolOutputPrefix))
+			sb.WriteString(wl)
+			sb.WriteString("\n")
+		}
+	}
+	if truncated {
+		sb.WriteString(indent)
+		sb.WriteString(styleToolPreviewHint.Render("..."))
+		sb.WriteString("\n")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 格式辅助函数
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Todo 面板渲染
+// ---------------------------------------------------------------------------
+
+// renderTodoPanel 渲染固定在底部的 todo 面板。
+// spinnerView 是 bubbletea spinner 的当前渲染帧（用于 in_progress 项）。
+// 返回渲染后的字符串和面板所占行数。
+func renderTodoPanel(lc *Messages, todos []TodoItem, width int, expanded bool, focused bool, spinnerView string) (string, int) {
+	if len(todos) == 0 {
+		return "", 0
+	}
+
+	// 排序：in_progress > pending > completed
+	sorted := make([]TodoItem, len(todos))
+	copy(sorted, todos)
+	sortTodos(sorted)
+
+	// 统计各状态数量
+	var inProgressCount, pendingCount, completedCount int
+	for _, t := range sorted {
+		switch t.Status {
+		case "in_progress":
+			inProgressCount++
+		case "pending":
+			pendingCount++
+		case "completed":
+			completedCount++
+		}
+	}
+	totalCount := len(sorted)
+
+	// 缩略显示：默认 5 项
+	maxVisible := 5
+	if expanded {
+		maxVisible = totalCount
+	}
+	visibleItems := sorted
+	hidden := 0
+	if totalCount > maxVisible {
+		visibleItems = sorted[:maxVisible]
+		hidden = totalCount - maxVisible
+	}
+
+	// 边框
+	borderColor := colorFooterFg
+	if focused {
+		borderColor = colorHeaderAccent
+	}
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor).
+		Padding(1, 2).
+		Width(width)
+
+	innerWidth := width - 2 - 4 // border(2) + padding(2*2)
+
+	// ── 标题行 ──
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(colorHeaderAccent).Width(innerWidth)
+	title := titleStyle.Render(fmt.Sprintf(lc.TodoTitle, completedCount, totalCount))
+
+	// ── 每项渲染 ──
+	var itemLines []string
+	for _, t := range visibleItems {
+		itemLines = append(itemLines, renderTodoItem(t, innerWidth, spinnerView))
+	}
+
+	// ── 折叠提示（仅显示 hidden 项的类型分解） ──
+	if hidden > 0 {
+		hintStyle := lipgloss.NewStyle().Foreground(colorMuted).Width(innerWidth)
+		hiddenItems := sorted[maxVisible:]
+		hint := formatHiddenSummary(lc, hiddenItems, hidden)
+		itemLines = append(itemLines, hintStyle.Render(hint))
+	}
+
+	// ── 组装 ──
+	var parts []string
+	parts = append(parts, title, "")
+	parts = append(parts, itemLines...)
+
+	content := strings.Join(parts, "\n")
+	rendered := boxStyle.Render(content)
+
+	return rendered, strings.Count(rendered, "\n") + 1
+}
+
+// renderTodoItem 渲染单条 todo 项。
+func renderTodoItem(t TodoItem, width int, spinnerView string) string {
+	switch t.Status {
+	case "in_progress":
+		return renderTodoInProgress(t, width, spinnerView)
+	case "completed":
+		return renderTodoCompleted(t, width)
+	default:
+		return renderTodoPending(t, width)
+	}
+}
+
+func renderTodoInProgress(t TodoItem, width int, spinnerView string) string {
+	spinnerPart := styleTodoInProgressSpinner.Render(spinnerView)
+	textPart := styleTodoInProgressText.Render(t.Content)
+	line := spinnerPart + " " + textPart
+	return lipgloss.NewStyle().Width(width).Render(line)
+}
+
+func renderTodoPending(t TodoItem, width int) string {
+	marker := styleTodoPendingMarker.Render("○")
+	text := t.Content
+	line := marker + " " + text
+	return lipgloss.NewStyle().Width(width).Render(line)
+}
+
+func renderTodoCompleted(t TodoItem, width int) string {
+	marker := styleTodoCompletedMarker.Render("✓")
+	text := styleTodoCompletedText.Render(t.Content)
+	line := marker + " " + text
+	return lipgloss.NewStyle().Width(width).Render(line)
+}
+
+// formatHiddenSummary 格式化隐藏项提示，仅显示隐藏项的类型分解。
+func formatHiddenSummary(lc *Messages, hiddenItems []TodoItem, hiddenCount int) string {
+	var doneCount, inProgCount, pendCount int
+	for _, t := range hiddenItems {
+		switch t.Status {
+		case "completed":
+			doneCount++
+		case "in_progress":
+			inProgCount++
+		case "pending":
+			pendCount++
+		}
+	}
+	parts := []string{fmt.Sprintf(lc.TodoHiddenCount, hiddenCount)}
+	if doneCount > 0 {
+		parts = append(parts, fmt.Sprintf(lc.TodoDoneCount, doneCount))
+	}
+	if inProgCount > 0 {
+		parts = append(parts, fmt.Sprintf(lc.TodoInProgCount, inProgCount))
+	}
+	if pendCount > 0 {
+		parts = append(parts, fmt.Sprintf(lc.TodoPendingCount, pendCount))
+	}
+	return strings.Join(parts, " · ")
+}
+
+func sortTodos(todos []TodoItem) {
+	rank := func(s string) int {
+		switch s {
+		case "in_progress":
+			return 0
+		case "pending":
+			return 1
+		default:
+			return 2
+		}
+	}
+	for i := 0; i < len(todos); i++ {
+		for j := i + 1; j < len(todos); j++ {
+			if rank(todos[i].Status) > rank(todos[j].Status) {
+				todos[i], todos[j] = todos[j], todos[i]
+			}
+		}
+	}
+}
