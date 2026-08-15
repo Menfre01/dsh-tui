@@ -1,5 +1,18 @@
 # Changelog
 
+## [v0.0.2] — 2026-08-15
+
+### Features
+
+- **Auto-update**: background check against GitHub Releases at startup (302 tag comparison, 2s timeout, silent on failure); footer banner announces new versions (⏎ update vX); press Enter on empty input to self-update — downloads the platform package, extracts, backs up and replaces the binary, with automatic rollback on failure; skips chmod on Windows
+- **Exit resume hint**: prints the full session id on exit so you can `dsh-tui --resume <id>` later
+
+### Fixes
+
+- Semantic version comparison for update checks: git describe suffixes (`v0.0.1-7-g...-dirty`) no longer trigger false update notices; only the `vX.Y.Z` segment is compared
+
+---
+
 ## [v0.0.1] — 2026-08-15
 
 Initial release: a Go terminal client for deepseek-harness (rendering layer ported from waveloom).

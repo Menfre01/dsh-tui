@@ -1,5 +1,21 @@
 # Changelog
 
+## [v0.0.2] — 2026-08-15
+
+### 新增功能
+
+- **自动更新**:启动时后台检查 GitHub Release(302 tag 比对,2s 超时静默),
+  footer 提示新版本(⏎ update vX),空输入按 Enter 触发自更新——下载当前
+  平台包、解压、备份并替换二进制,失败自动回滚;Windows 跳过 chmod
+- **退出恢复提示**:退出时打印完整 session id,方便 `dsh-tui --resume <id>` 恢复
+
+### 修复
+
+- 更新检测语义化版本比较:git describe 后缀(`v0.0.1-7-g...-dirty`)不再
+  误报更新;仅比较 `vX.Y.Z` 主版本段
+
+---
+
 ## [v0.0.1] — 2026-08-15
 
 首发版本:deepseek-harness 的 Go 终端客户端(渲染层移植自 waveloom)。

@@ -109,7 +109,7 @@ Once inside:
 
 | Key | Action |
 |---|---|
-| Enter | Send (queued when busy); **Ctrl+Enter toggles mode** (queue↔steer) |
+| Enter | Send (queued when busy); **Ctrl+Enter toggles mode** (queue↔steer); on empty input with an update banner: install the new version |
 | ↑/↓ | Input history navigation (when idle) |
 | Esc Esc (within 500ms) | Clear the input box |
 | Paste | Bracketed paste (Cmd/Ctrl+Shift+V) |

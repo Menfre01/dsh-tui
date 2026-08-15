@@ -100,7 +100,7 @@ dsh-tui --locale zh-CN        # 指定语言(auto 时跟随宿主 locale.prefere
 
 | 按键 | 功能 |
 |---|---|
-| Enter | 发送(繁忙时入队,宿主 queue 模式);**Ctrl+Enter 反转 mode**(queue↔steer) |
+| Enter | 发送(繁忙时入队,宿主 queue 模式);**Ctrl+Enter 反转 mode**(queue↔steer);有更新 banner 时空 Enter 安装新版本 |
 | ↑/↓ | 输入历史导航(空闲时) |
 | Esc Esc(500ms 内) | 清空输入框 |
 | 粘贴 | bracketed paste(Cmd/Ctrl+Shift+V) |
