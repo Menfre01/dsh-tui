@@ -22,6 +22,9 @@ build:
 install: build
 	mkdir -p $(PREFIX)
 	cp bin/dsh-tui $(PREFIX)/dsh-tui
+	# macOS:清除 provenance 等扩展属性,否则带沙箱来源标记的二进制
+	# 会被系统以 "Code Signature Invalid" 杀掉(实测 SIGKILL)
+	@if [ "$$(uname -s)" = "Darwin" ]; then xattr -c $(PREFIX)/dsh-tui 2>/dev/null || true; fi
 	@echo "installed to $(PREFIX)/dsh-tui"
 
 test:
