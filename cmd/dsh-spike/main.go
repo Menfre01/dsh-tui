@@ -18,7 +18,6 @@ import (
 	"os"
 	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/Menfre01/dsh-tui/internal/dsh"
@@ -31,7 +30,8 @@ func main() {
 	watch := flag.Int("watch", 15, "seconds to keep observing after setup")
 	flag.Parse()
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// Windows 无 SIGTERM 语义,仅注册 os.Interrupt(Unix 上 Ctrl+C 亦映射到此)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
 	client := dsh.NewClient(*url)

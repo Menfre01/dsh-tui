@@ -16,7 +16,6 @@ import (
 	"os"
 	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -43,7 +42,8 @@ func main() {
 		return
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// Windows 无 SIGTERM 语义,仅注册 os.Interrupt(Unix 上 Ctrl+C 亦映射到此)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
 	client := dsh.NewClient(*url)
