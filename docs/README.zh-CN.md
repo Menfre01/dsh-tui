@@ -46,25 +46,43 @@ brew install menfre01/tap/dsh-tui
 ### 从源码构建
 
 ```bash
-make build      # 当前平台
+make build      # 当前平台 → bin/dsh-tui
 make release    # 交叉编译 3 平台 × 2 架构 → dist/(含 checksums.txt)
 ```
+
+仅开发需要;上面的安装脚本会直接给你可运行的二进制。
+
+## 开始之前
+
+dsh-tui 是**纯客户端**——需要一个正在运行的 dsh 宿主。
+
+1. **安装宿主**:按 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)
+   的安装说明(npm 全局包 `@deepseek-ai/dsh`)
+2. **为宿主配置 LLM API key**(见 deepseek-harness 文档)
+3. **启动宿主**(常驻;web UI 与每个 dsh-tui 窗口共享同一实例):
+
+   ```bash
+   dsh web     # 默认 http://127.0.0.1:3080
+   ```
+
+之后 dsh-tui 就是一个普通命令——已安装的二进制无需 Go 工具链。
 
 ## 快速开始
 
 ```bash
-# 构建
-make build                       # 产出 bin/dsh-tui
-
-# 宿主进程(常驻,web + TUI 共享)
-dsh web                          # 终端 1
-
-# TUI 客户端(任意目录,可多开)
-./bin/dsh-tui                    # 新建 session
-./bin/dsh-tui --resume <id>      # 恢复已有 session(空闲时按 ← 打开会话列表)
-./bin/dsh-tui --url http://192.168.x.x:3080   # 连接远程宿主
-./bin/dsh-tui --locale zh-CN     # 指定语言(auto 时跟随宿主 locale.preference)
+# TUI 客户端(任意目录,可多开)——默认连接 127.0.0.1:3080
+dsh-tui                       # 新建 session
+dsh-tui --url http://192.168.x.x:3080   # 连接远程宿主
+dsh-tui --locale zh-CN        # 指定语言(auto 时跟随宿主 locale.preference)
 ```
+
+进入后:
+
+- 输入消息按 **Enter** 发送
+- 空闲时按 **`←`** 打开会话列表——Enter 切换已有会话,**N** 新建。
+  无需知道 session id
+- `--resume <id>` 可选:启动时直接恢复指定会话;同一批会话都能通过
+  `←` 列表进入
 
 ## 快捷键
 

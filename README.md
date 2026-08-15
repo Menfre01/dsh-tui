@@ -55,25 +55,43 @@ binary on your PATH.
 ### Build from source
 
 ```bash
-make build      # current platform
+make build      # current platform → bin/dsh-tui
 make release    # cross-compile 3 platforms × 2 arches → dist/ (with checksums.txt)
 ```
+
+Only needed for development; the install scripts above give you a ready binary.
+
+## Before you start
+
+dsh-tui is a **pure client** — it needs a running dsh host to talk to.
+
+1. **Install the host**: follow [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)
+   installation instructions (npm global package `@deepseek-ai/dsh`).
+2. **Configure an LLM API key** for the host (see deepseek-harness docs).
+3. **Start the host** (resident; the web UI and every dsh-tui window share it):
+
+   ```bash
+   dsh web     # default: http://127.0.0.1:3080
+   ```
+
+Then use dsh-tui as a normal command — no Go toolchain needed for the installed binary.
 
 ## Quick start
 
 ```bash
-# Build
-make build                       # produces bin/dsh-tui
-
-# Host process (resident; web + TUI share it)
-dsh web                          # terminal 1
-
-# TUI client (any directory, multiple instances)
-./bin/dsh-tui                    # new session
-./bin/dsh-tui --resume <id>      # resume a session (press ← while idle to open the session list)
-./bin/dsh-tui --url http://192.168.x.x:3080   # connect to a remote host
-./bin/dsh-tui --locale zh-CN     # force locale (auto follows host locale.preference)
+# TUI client (any directory, multiple instances) — connects to 127.0.0.1:3080 by default
+dsh-tui                       # new session
+dsh-tui --url http://192.168.x.x:3080   # connect to a remote host
+dsh-tui --locale zh-CN        # force locale (auto follows host locale.preference)
 ```
+
+Once inside:
+
+- Type a message and press **Enter** to send.
+- Press **`←`** while idle to open the session list — switch to an existing
+  session with Enter, or start a new one with **N**. No need to know session ids.
+- `--resume <id>` is optional: it restores a specific session at startup; the
+  same sessions are reachable via the `←` list.
 
 ## Key bindings
 
