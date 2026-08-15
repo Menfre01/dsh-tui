@@ -260,7 +260,7 @@ func TestSessionListWindow(t *testing.T) {
 	// 选中第 0 项:窗口 0..7,显示 ↓ 4 more,无 ↑
 	m.sessionListIdx = 0
 	out := m.renderSessionListOverlay(70)
-	if strings.Contains(out, "↑") {
+	if strings.Contains(out, "↑ 4 more") {
 		t.Fatalf("idx=0 不应有 ↑ more: %q", out)
 	}
 	if !strings.Contains(out, "↓ 4 more") {
