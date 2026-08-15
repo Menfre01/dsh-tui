@@ -133,6 +133,7 @@ internal/tui/         渲染层(waveloom 移植:段落/主题/HUD/overlay) + 事
 - **HUD**:ctx 进度(projectedTokens 优先,精确百分比,压力着色)、turns/elap/tok/cache 来自宿主投影,effort 显示 `(effort ...)`
 - **配置跟随**:busyEnter(queue/steer,Ctrl+Enter 反转)、locale.preference(语言)、主题 auto(终端背景检测 + 轮询)
 - **多会话**:mux 帧按 sessionId 过滤,切换/新建后发送目标同步,不串台
+- **会话列表**:可见性规则对齐 dsh web(blank/subagent 过滤)、宿主 title 投影、固定高度窗口
 
 ## 开发
 
@@ -140,6 +141,7 @@ internal/tui/         渲染层(waveloom 移植:段落/主题/HUD/overlay) + 事
 make build      # 构建(环境变量指向工作区缓存)
 make test       # 单测(dsh wire + tui 交互/布局/投影)
 make vet
+make lint       # golangci-lint(对齐 waveloom 的 linter 集)
 make dump       # 无头渲染验证(无 TTY 环境)
 ```
 

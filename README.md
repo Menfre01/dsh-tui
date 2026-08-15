@@ -142,6 +142,7 @@ internal/tui/         rendering layer (waveloom port: paragraphs/theme/HUD/overl
 - **HUD**: ctx progress (projectedTokens first, exact percentage, pressure coloring), turns/elap/tok/cache from host projections, effort shown as `(effort ...)`
 - **Config following**: busyEnter (queue/steer, Ctrl+Enter toggles), locale.preference (language), auto theme (terminal background detection + polling)
 - **Multi-session**: mux frames filtered by sessionId; send target synced on switch/new — no cross-talk
+- **Session list**: visibility rules aligned with dsh web (blank/subagent filtering), host title projection, fixed-height window
 
 ## Development
 
@@ -149,6 +150,7 @@ internal/tui/         rendering layer (waveloom port: paragraphs/theme/HUD/overl
 make build      # build (env vars point to workspace caches)
 make test       # unit tests (dsh wire + tui interaction/layout/projection)
 make vet
+make lint       # golangci-lint (waveloom-aligned linter set)
 make dump       # headless render verification (no TTY)
 ```
 

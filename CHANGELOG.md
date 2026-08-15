@@ -16,7 +16,13 @@
   search 分组、bash 退出码/耗时、todo_write 计数摘要、job 工具状态;
   全部宿主工具的参数摘要与结构化 suffix
 - **HUD 与宿主投影对齐**:ctx 进度(projectedTokens 优先,精确百分比,压力着色)、
-  turns/elap/tok/cache/effort/会话标题均来自宿主投影
+  turns/elap/tok/cache/effort/会话标题均来自宿主投影;tok 支持
+  k/M 单位(≥1M 显示 x.xM)
+- **会话列表**:空闲态 `←` 打开/关闭(↑↓ 导航、Enter 切换、N 新建);
+  对齐 dsh web 可见性规则(blank 会话仅当前可见、subagent 子会话隐藏)、
+  显示宿主 title 投影、固定高度窗口(8 项 + 滚动跟随 + more 提示)、
+  条目间留空行、选中样式与其他弹窗一致(左侧边框 + 绿色粗体)、
+  选中项第二行显示工作目录
 - **审批/提问框**:↑↓ 选择交互;提问支持 Other 自定义答案;审批支持
   sandbox 升级请求的允许/拒绝
 - **输入交互**:历史导航(↑↓)、Esc Esc 清空、bracketed paste 粘贴、
