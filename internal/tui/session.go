@@ -216,9 +216,7 @@ func (m *model) renderSessionListOverlay(boxWidth int) string {
 // shortSessionID 截短会话 ID 便于列表显示。
 func shortSessionID(id string) string {
 	// 跳过 "session-" 前缀,只截 UUID 段
-	if strings.HasPrefix(id, "session-") {
-		id = id[len("session-"):]
-	}
+	id = strings.TrimPrefix(id, "session-")
 	if len(id) <= 14 {
 		return id
 	}

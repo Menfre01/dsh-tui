@@ -546,24 +546,6 @@ func (m *model) renderHeader() string {
 	return sb.String()
 }
 
-// normalizeWidth 将全角字符转换为半角,用于模型名前归一化显示。
-// 处理范围:全角标点/字母/数字(U+FF01–U+FF5E → U+0021–U+007E)及全角空格。
-func normalizeWidth(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	for _, r := range s {
-		switch {
-		case r == 0x3000: // 全角空格 → 半角空格
-			b.WriteByte(' ')
-		case 0xFF01 <= r && r <= 0xFF5E: // 全角标点/字母/数字
-			b.WriteRune(r - 0xFEE0)
-		default:
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
-
 // ---------------------------------------------------------------------------
 // Footer HUD 渲染
 // ---------------------------------------------------------------------------

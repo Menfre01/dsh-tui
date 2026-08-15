@@ -1,0 +1,72 @@
+# dsh-tui — golangci-lint 配置(对齐 waveloom 的 linter 集)
+# 安装:go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+# 运行:make lint
+
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - gosec
+    - errcheck
+    - errname
+    - govet
+    - staticcheck
+    - ineffassign
+    - unused
+    - unconvert
+    - copyloopvar
+    - noctx
+
+  settings:
+    gosec:
+      excludes:
+        - G104
+        - G204
+        - G301
+        - G302
+        - G304
+        - G306
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+
+  exclusions:
+    rules:
+      # 测试代码:httptest 的 w.Write 返回值无需强制检查
+      - path: (.+)_test\.go
+        linters: [errcheck]
+      - path: (.+)_test\.go
+        linters: [gosec]
+        text: "G101|G304"
+      # 会话/HTTP 响应体关闭是惯用法
+      - linters: [gosec]
+        text: "G117"
+      # 误报:错误码字符串 / UI 文案字段名(SetupAPIKey 等)并非硬编码凭据
+      - path: internal/dsh/rpc\.go
+        linters: [gosec]
+        text: "G101"
+      - path: internal/tui/i18n\.go
+        linters: [gosec]
+        text: "G101"
+      # 误报:颜色分量转换 uint32→uint8(r>>8 后必然在 0..255)
+      - path: internal/tui/glamour\.go
+        linters: [gosec]
+        text: "G115"
+      # 移植自 waveloom 但尚未接线的模块(@ 文件选择器、/ 命令面板、
+      # rewind 回退、locale 选择器):代码完整保留待接线,
+      # 接线后应移除对应排除规则。仅放宽 unused。
+      - path: internal/tui/(tui_picker|tui_overlay|types|model_picker|model|i18n)\.go
+        linters: [unused]
+      # 与 waveloom 相同的宽松项(移植语义保留)
+      - path: .*
+        linters: [noctx]
+      - path: .*
+        linters: [unconvert]
+      - path: .*
+        linters: [govet]
+        text: "shadow"
+      - path: .*
+        linters: [govet]
+        text: "unusedwrite"

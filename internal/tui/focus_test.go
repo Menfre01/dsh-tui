@@ -200,8 +200,7 @@ func TestBgProbeTick(t *testing.T) {
 	}
 	// 非 auto 模式:不查询但续期
 	m.themeMode = "dark"
-	upd, cmd = m.Update(bgProbeMsg{})
-	m = upd.(*model)
+	_, cmd = m.Update(bgProbeMsg{})
 	if cmd == nil {
 		t.Fatal("非 auto 也应续期 tick")
 	}

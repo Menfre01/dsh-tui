@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/progress"
 	"charm.land/bubbles/v2/spinner"
 	"image/color"
@@ -516,7 +515,3 @@ type gapEventsMsg struct {
 	err    error
 }
 
-// keyMatches 兼容 waveloom 按键匹配(供后续阶段使用)。
-func keyMatches(msg tea.KeyPressMsg, binding key.Binding) bool {
-	return key.Matches(msg, binding)
-}

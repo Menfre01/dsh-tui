@@ -136,7 +136,7 @@ func TestExitCommand(t *testing.T) {
 	}
 	// 正常消息仍发送
 	m.input.SetValue("not exit")
-	m = pressKey(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	_ = pressKey(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if !sent {
 		t.Fatal("非 exit 输入应正常发送")
 	}

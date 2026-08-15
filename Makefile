@@ -11,7 +11,7 @@ export GOCACHE := $(CURDIR)/.gocache
 GOFLAGS := -buildvcs=false
 LDFLAGS := -s -w -X github.com/Menfre01/dsh-tui/internal/tui.Version=$(VERSION)
 
-.PHONY: build test vet run dump spike clean
+.PHONY: build test vet lint run dump spike clean
 
 build:
 	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/dsh-tui ./cmd/dsh-tui
@@ -21,6 +21,13 @@ test:
 
 vet:
 	$(GO) vet $(GOFLAGS) ./...
+
+# golangci-lint(配置见 .golangci.yml,对齐 waveloom 的 linter 集)
+# 安装: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+# 缓存指向工作区,沙箱/离线友好(与 GOMODCACHE/GOCACHE 一致)
+lint:
+	@command -v golangci-lint >/dev/null 2>&1 || { echo "golangci-lint 未安装: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; exit 1; }
+	GOLANGCI_LINT_CACHE=$(CURDIR)/.golangci-cache golangci-lint run --timeout=5m ./...
 
 run: build
 	./bin/dsh-tui

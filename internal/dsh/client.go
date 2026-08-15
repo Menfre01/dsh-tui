@@ -82,7 +82,7 @@ func (c *Client) Call(ctx context.Context, method string, payload any, out any) 
 	if err != nil {
 		return &RpcError{Code: ErrInternal, Message: "transport: " + err.Error(), Details: []byte("{}")}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 160*1024*1024))
 	if err != nil {
@@ -135,7 +135,7 @@ func (c *Client) Respond(ctx context.Context, rpcID string, result RpcResult) er
 	if err != nil {
 		return &RpcError{Code: ErrInternal, Message: "respond transport: " + err.Error(), Details: []byte("{}")}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return &RpcError{Code: ErrInternal, Message: "read respond response: " + err.Error(), Details: []byte("{}")}

@@ -132,19 +132,7 @@ func (p *Projector) replayEvent(ev *dsh.SessionEvent, view json.RawMessage, sile
 		// 结构边界,渲染层无对应段落
 	default:
 		// 插件扩展事件(compaction/*、permission/preset、session/title 等):
-		// ignorable 或纯 log 事件静默;required 未知事件给出系统提示。
-		if ev.Ignorable == nil || !*ev.Ignorable {
-			// 事件序列号过大的 log-only 事件也不打扰用户 —— 这里仅对
-			// 少数已知无意义类型静默,其余显示为系统通知。
-			ignored := map[string]bool{
-				"request/header":  true,
-				"request/context": true,
-				"session/end-seed": true,
-			}
-			if !ignored[ev.Type] {
-				// 保持安静:未知事件对渲染无影响
-			}
-		}
+		// 对渲染无影响,静默忽略。
 	}
 }
 

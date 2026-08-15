@@ -129,7 +129,6 @@ func TestDecodeMuxFrames(t *testing.T) {
 		t.Fatalf("fixture has %d frames, want %d", len(lines), len(wantTypes))
 	}
 
-	eventTypes := []string{}
 	for i, raw := range lines {
 		var frame ServerRequest
 		if err := json.Unmarshal([]byte(raw), &frame); err != nil {
@@ -155,7 +154,6 @@ func TestDecodeMuxFrames(t *testing.T) {
 			if mux.Event == nil {
 				t.Fatalf("line %d: session/event without event", i)
 			}
-			eventTypes = append(eventTypes, mux.Event.Type)
 		}
 	}
 

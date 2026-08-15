@@ -128,14 +128,6 @@ type Paragraph struct {
 // 段落列表操作
 // ---------------------------------------------------------------------------
 
-// lastPara 返回段落列表的最后一个元素指针，nil 表示列表为空。
-func lastPara(paras []Paragraph) *Paragraph {
-	if len(paras) == 0 {
-		return nil
-	}
-	return &paras[len(paras)-1]
-}
-
 // ---------------------------------------------------------------------------
 // 工具参数摘要格式化
 // ---------------------------------------------------------------------------
@@ -866,26 +858,6 @@ func formatTokens(n int) string {
 	default:
 		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
 	}
-}
-
-// formatBalance 将余额信息格式化为单行紧凑显示。
-// 优先展示 USD 余额，若无则取首个币种；不支持时返回空字符串。
-func formatBalance(balance *BalanceInfo) string {
-	if balance == nil || len(balance.BalanceInfos) == 0 {
-		return ""
-	}
-	// 优先取 USD
-	var cb *CurrencyBalance
-	for i := range balance.BalanceInfos {
-		if balance.BalanceInfos[i].Currency == "USD" {
-			cb = &balance.BalanceInfos[i]
-			break
-		}
-	}
-	if cb == nil {
-		cb = &balance.BalanceInfos[0]
-	}
-	return fmt.Sprintf("%s %s", cb.Currency, cb.TotalBalance)
 }
 
 // countDiffLines 从工具输出中估算增删行数。
@@ -2658,34 +2630,6 @@ func collapseBlankLines(s string) string {
 		s = strings.ReplaceAll(s, "\n\n\n", "\n\n")
 	}
 	return s
-}
-
-// countHunks 统计 hunk 文本中 @@ 头的数量。
-func countHunks(hunk string) int {
-	n := 0
-	for _, line := range strings.Split(hunk, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "@@") {
-			n++
-		}
-	}
-	return n
-}
-
-// extractPatchPaths 从 patch 文本中提取 *** Update File: 指定的文件路径。
-func extractPatchPaths(patch string) []string {
-	var paths []string
-	seen := make(map[string]bool)
-	for _, line := range strings.Split(patch, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "*** Update File:") {
-			p := strings.TrimSpace(strings.TrimPrefix(trimmed, "*** Update File:"))
-			if p != "" && !seen[p] {
-				seen[p] = true
-				paths = append(paths, p)
-			}
-		}
-	}
-	return paths
 }
 
 // findFirstPromptPos 在可能含 ANSI 转义序列的字符串中查找第一个 "  "（2 空格）的位置。

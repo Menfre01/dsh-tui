@@ -5,7 +5,7 @@ Go 终端客户端,渲染层移植自 [waveloom](https://github.com/Menfre01/wav
 
 ## 开发
 
-- **构建/测试**:`make build && make test && make vet`(环境变量指向工作区缓存,
+- **构建/测试**:`make build && make test && make vet && make lint`(环境变量指向工作区缓存,
   仓库 `.git` 状态特殊,构建需 `-buildvcs=false`)
 - **协议漂移防护**:wire 层全部隔离在 `internal/dsh`,渲染/投影在 `internal/tui`;
   宿主协议变更时先对照 upstream 源码(`@deepseek-ai/*` 包)再改 wire 层
@@ -18,7 +18,7 @@ Go 终端客户端,渲染层移植自 [waveloom](https://github.com/Menfre01/wav
 **发布前置校验**(必须全部通过后方可继续发布流程):
 
 ```sh
-make build && make test && make vet
+make build && make test && make vet && make lint
 ```
 
 任一失败 → 先修复,再重新走校验。

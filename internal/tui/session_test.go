@@ -98,11 +98,11 @@ func TestSessionSwitchError(t *testing.T) {
 	}
 }
 
-var errFake = &fakeErr{}
+var errFake = &fakeTestError{}
 
-type fakeErr struct{}
+type fakeTestError struct{}
 
-func (f *fakeErr) Error() string { return "fake error" }
+func (f *fakeTestError) Error() string { return "fake error" }
 
 // TestEnterAfterTurnEnd 回归:第一次发送后 running=true,回合结束(turn/end)
 // 必须把 running 复位,否则第二次 Enter 永远被拦截。
