@@ -37,6 +37,18 @@ make vet
 - 投影/交互/渲染路径的修复必须带回归测试
 - 布局/交互测试在 `internal/tui/*_test.go`，wire 测试在 `internal/dsh/*_test.go`
 
+## Commit 规范
+
+遵循 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/v1.0.0/) v1.0.0：
+
+```
+<type>(<scope>): <subject>
+```
+
+- `type`: `feat` / `fix` / `refactor` / `test` / `docs` / `chore`
+- `scope`: 包名（`wire` / `tui` / `session` / `picker` / `release` / ...），多 scope 用 `/` 分隔
+- `subject`: 中文祈使句，≤72 字符
+
 ## 项目结构
 
 ```

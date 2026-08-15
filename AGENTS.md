@@ -13,6 +13,29 @@ Go 终端客户端,渲染层移植自 [waveloom](https://github.com/Menfre01/wav
   (状态 suffix)必须覆盖,避免摘要行显示原始 JSON
 - **测试**:投影/交互/渲染路径的修复必须带回归测试
 
+## 提交策略
+
+**禁止自动提交**。必须等待用户明确给出指令(如"提交"、"commit")后方可执行
+`git add` / `git commit` / `git push`。
+
+## Commit 规范
+
+[Conventional Commits](https://www.conventionalcommits.org/zh-hans/v1.0.0/) v1.0.0:
+
+```
+<type>(<scope>): <subject>
+```
+
+- `type`: `feat` / `fix` / `refactor` / `test` / `docs` / `chore`
+- `scope`: 包名(`wire` / `tui` / `session` / `picker` / `release` / ...),
+  多 scope 用 `/` 分隔
+- `subject`: 中文祈使句,≤72 字符,不以句号结尾
+
+```
+feat(tui): 会话列表对齐 dsh web 可见性规则(blank/subagent 过滤)
+fix(wire): session.list 解析字段修正
+```
+
 ## Release 规范
 
 **发布前置校验**(必须全部通过后方可继续发布流程):

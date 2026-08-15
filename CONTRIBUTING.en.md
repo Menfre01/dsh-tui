@@ -37,6 +37,18 @@ make vet
 - Fixes on projection/interaction/rendering paths must ship with regression tests
 - Layout/interaction tests live in `internal/tui/*_test.go`; wire tests in `internal/dsh/*_test.go`
 
+## Commit convention
+
+Follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) v1.0.0:
+
+```
+<type>(<scope>): <subject>
+```
+
+- `type`: `feat` / `fix` / `refactor` / `test` / `docs` / `chore`
+- `scope`: package name (`wire` / `tui` / `session` / `picker` / `release` / ...); multiple scopes joined with `/`
+- `subject`: imperative Chinese, ≤72 chars
+
 ## Project structure
 
 ```
