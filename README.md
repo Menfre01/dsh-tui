@@ -25,11 +25,15 @@ UI plus any number of dsh-tui windows share the same instance.
 
 ### One-command install script
 
-```bash
-# macOS / Linux (installs to ~/.local/bin)
-curl -fsSL https://raw.githubusercontent.com/Menfre01/dsh-tui/main/install.sh | sh
+**macOS / Linux**(installs to `~/.local/bin`):
 
-# Windows (PowerShell)
+```bash
+curl -fsSL https://raw.githubusercontent.com/Menfre01/dsh-tui/main/install.sh | sh
+```
+
+**Windows**(PowerShell):
+
+```powershell
 powershell -ExecutionPolicy Bypass -Command "iex (iwr -UseBasicParsing https://raw.githubusercontent.com/Menfre01/dsh-tui/main/install.ps1)"
 ```
 

@@ -17,11 +17,15 @@
 
 ### 一键安装脚本
 
-```bash
-# macOS / Linux(安装到 ~/.local/bin)
-curl -fsSL https://raw.githubusercontent.com/Menfre01/dsh-tui/main/install.sh | sh
+**macOS / Linux**(安装到 `~/.local/bin`):
 
-# Windows(PowerShell)
+```bash
+curl -fsSL https://raw.githubusercontent.com/Menfre01/dsh-tui/main/install.sh | sh
+```
+
+**Windows**(PowerShell):
+
+```powershell
 powershell -ExecutionPolicy Bypass -Command "iex (iwr -UseBasicParsing https://raw.githubusercontent.com/Menfre01/dsh-tui/main/install.ps1)"
 ```
 
