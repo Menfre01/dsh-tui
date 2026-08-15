@@ -517,3 +517,52 @@ func TestSessionListOpenByLeft(t *testing.T) {
 		t.Fatal("输入非空时 ← 不应打开会话列表")
 	}
 }
+
+// TestSessionListLongTitleNoWrap 验证长 title 不会把 cwd 挤到第二行:
+// label 截断到可用宽度,cwd 与 label 同行且起点对齐。
+func TestSessionListLongTitleNoWrap(t *testing.T) {
+	m := NewModel(ModelConfig{Theme: "dark"})
+	_ = m.Init()
+	m.SetSessionInfo("session-cur", "deepseek-v4-flash")
+	longTitle := "这是一个非常非常非常非常非常非常非常非常长的会话标题用于测试换行行为"
+	m.SetSessions([]SessionBrief{
+		{SessionID: "session-aaaa1111-2222-3333-4444-555566667777", Cwd: "/very/long/workspace/path/example", Title: longTitle},
+	})
+	out := m.renderSessionListOverlay(70)
+	// 去掉 ANSI/边框后,title 与 cwd 应出现在同一行(行内都有)
+	rows := strings.Split(out, "\n")
+	strip := func(s string) string {
+		var b strings.Builder
+		in := false
+		for _, r := range s {
+			if r == '\x1b' {
+				in = true
+				continue
+			}
+			if in {
+				if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+					in = false
+				}
+				continue
+			}
+			b.WriteRune(r)
+		}
+		return b.String()
+	}
+	// 断言:title 片段与 cwd 片段(截断后)出现在同一行 —— 即没有换行
+	titleSnip := "这是一个"
+	cwdSnip := "/very/long/workspace"
+	found := false
+	for _, row := range rows {
+		content := strip(row)
+		if strings.Contains(content, cwdSnip) {
+			if !strings.Contains(content, titleSnip) {
+				t.Fatalf("cwd 与 label 不在同一行(被换行): %q", content)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("cwd 未出现在输出: %q", out)
+	}
+}

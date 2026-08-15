@@ -158,9 +158,13 @@ func (m *model) renderSessionListOverlay(boxWidth int) string {
 		}
 		for i := start; i < end; i++ {
 			s := vis[i]
-			running := ""
+			// 每行可用宽度:overlay box = 边框 2 + padding 4(左右各 2),
+			// 内容 = boxWidth - 6;行内样式装饰(选中边框+padding 或普通
+			// padding)占 2 列,再给 running(2 列) + label + 空格 + cwd。
+			lineAvail := boxWidth - 6 - 2
+			running := "  "
 			if s.Running {
-				running = styleFooterLatRed.Render("● ")
+				running = styleFooterLatRed.Render("● ") // 2 列,与普通行占位对齐
 			}
 			cwd := s.Cwd
 			if len(cwd) > 40 {
@@ -171,6 +175,19 @@ func (m *model) renderSessionListOverlay(boxWidth int) string {
 			if s.Title != "" {
 				label = truncateByDisplayWidth(s.Title, 30) + "  " + label
 			}
+			// cwd 与 label 的宽度预算:窄屏时优先保证 label 可读,
+			// cwd 按比例收缩(cwdMax 最多占可用宽度一半)
+			cwdMax := min(displayWidth(cwd), 30)
+			labelMax := lineAvail - 2 - 1 - cwdMax
+			if labelMax < 10 {
+				// 极窄终端:cwd 再让位,label 至少 10 列
+				cwd = truncateByDisplayWidth(cwd, max(lineAvail-2-1-10, 4))
+				labelMax = max(lineAvail-2-1-displayWidth(cwd), 4)
+			} else {
+				// cwd 也按预算截断,保证行总宽不超可用宽度(不换行)
+				cwd = truncateByDisplayWidth(cwd, cwdMax)
+			}
+			label = truncateByDisplayWidth(label, labelMax)
 			line := fmt.Sprintf("%s%s %s",
 				running,
 				label,
