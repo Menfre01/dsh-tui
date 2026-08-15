@@ -260,7 +260,7 @@ type Messages struct {
 
 var zhCN = Messages{
 	// Input
-	InputPlaceholder:          "输入消息, ⏎ 发送 · Ctrl+G 主题 · Esc 中断",
+	InputPlaceholder:          "输入消息, ⏎ 发送 · ← 会话 · Esc 中断",
 	InputOtherPlaceholder:     "输入自定义答案...",
 	InputAgentRunning:         "Agent 执行中... Esc 中断",
 	InputFocusModePlaceholder: "段落已聚焦 · ⏎ 展开/折叠 · Esc 回到输入",
@@ -268,11 +268,12 @@ var zhCN = Messages{
 
 	// Welcome
 	WelcomeGuide: "" +
-		"欢迎使用 Waveloom — DeepSeek 原生终端编码代理\n" +
+		"欢迎使用 dsh-tui — DeepSeek Harness 终端客户端\n" +
 		"\n" +
-		"  /  命令面板 — model、theme、locale、help、rewind\n" +
-		"  @  引用文件 — @main.go 将文件内容加入上下文\n" +
+		"  ←  会话列表 — 切换/新建会话\n" +
+		"  Ctrl+G 主题 · Ctrl+M 模型 — 切换主题与模型\n" +
 		"  ⏎  发送消息 — 让我编写、重构或调试代码\n" +
+		"  Esc  中断 — 停止当前回合\n" +
 		"\n" +
 		"试试: \"介绍一下这个项目\" 或 \"帮我写个单元测试\"\n" +
 		"\n" +
@@ -565,7 +566,7 @@ var zhCN = Messages{
 }
 
 var enUS = Messages{
-	InputPlaceholder:          "Type a message, ⏎ send · Ctrl+G theme · Esc interrupt",
+	InputPlaceholder:          "Type a message, ⏎ send · ← sessions · Esc interrupt",
 	InputOtherPlaceholder:     "Type custom answer...",
 	InputAgentRunning:         "Agent running... Esc to interrupt",
 	InputFocusModePlaceholder: "Paragraph focused · ⏎ expand/collapse · Esc back to input",
@@ -573,11 +574,12 @@ var enUS = Messages{
 
 	// Welcome
 	WelcomeGuide: "" +
-		"Welcome to Waveloom — your DeepSeek-native terminal coding agent\n" +
+		"Welcome to dsh-tui — the DeepSeek Harness terminal client\n" +
 		"\n" +
-		"  /  Commands — model, theme, locale, help, rewind\n" +
-		"  @  Reference files — @main.go to add context\n" +
+		"  ←  Sessions — switch or create sessions\n" +
+		"  Ctrl+G theme · Ctrl+M model — switch theme and model\n" +
 		"  ⏎  Send message — ask me to write, refactor, or debug code\n" +
+		"  Esc  Interrupt — stop the current turn\n" +
 		"\n" +
 		"Try: \"Explain this project\" or \"Add a unit test for ...\"\n" +
 		"\n" +
