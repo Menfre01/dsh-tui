@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -97,7 +99,75 @@ func (m *model) Init() tea.Cmd {
 		sp.Tick, spAsst.Tick, spThought.Tick, spTool.Tick, spSubagent.Tick, spTodo.Tick,
 		func() tea.Msg { return tea.RequestBackgroundColor() },
 		m.bgProbeTick(),
+		m.checkUpdateCmd(),
 	)
+}
+
+// ---------------------------------------------------------------------------
+// 更新检查与自更新(waveloom 移植,适配 dsh-tui)
+// ---------------------------------------------------------------------------
+
+// updateCheckMsg 更新检查结果。
+type updateCheckMsg struct {
+	info *UpdateInfo
+	err  string
+}
+
+// updateDoneMsg 更新流程完成。
+type updateDoneMsg struct {
+	err   string // 非空表示失败
+	durMs int64  // 更新耗时(毫秒)
+}
+
+// checkUpdateCmd 在后台执行更新检查(2s 超时,失败静默)。
+func (m *model) checkUpdateCmd() tea.Cmd {
+	return func() tea.Msg {
+		info := <-CheckForUpdateAsync(Version)
+		if info == nil {
+			return updateCheckMsg{} // 无更新或检查失败,静默
+		}
+		return updateCheckMsg{info: info}
+	}
+}
+
+// startUpdate 返回一个 tea.Cmd,在 goroutine 中下载并安装新版本。
+// 进度通过 program.Send 推送到 TUI Update 循环。
+func (m *model) startUpdate() tea.Cmd {
+	m.updating = true
+	m.updateTick = 0
+	m.noticeBanner = "updating " + m.latestVersion
+
+	return func() tea.Msg {
+		startTime := time.Now()
+
+		execPath, err := os.Executable()
+		if err != nil {
+			m.program.Send(updateDoneMsg{err: fmt.Sprintf("failed to get current binary path: %v", err), durMs: time.Since(startTime).Milliseconds()})
+			return nil
+		}
+
+		downloadURL := BuildDownloadURL()
+
+		err = SelfUpdate(context.Background(), execPath, downloadURL, nil)
+
+		durMs := time.Since(startTime).Milliseconds()
+		if err != nil {
+			m.program.Send(updateDoneMsg{err: err.Error(), durMs: durMs})
+			return nil
+		}
+		m.program.Send(updateDoneMsg{durMs: durMs})
+		return nil
+	}
+}
+
+// handleUpdateDone 完成或失败更新流程。
+func (m *model) handleUpdateDone(msg updateDoneMsg) {
+	m.updating = false
+	if msg.err != "" {
+		m.noticeBanner = m.msg().UpdateFailed
+	} else {
+		m.noticeBanner = fmt.Sprintf(m.msg().UpdateInstalled, m.latestVersion)
+	}
 }
 
 // bgProbeMsg 周期背景色轮询触发。
@@ -215,6 +285,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// 空闲 → queue;繁忙 → 宿主 busyEnter 配置;Ctrl+Enter → 反转。
 			text := strings.TrimSpace(m.input.Value())
 			if text == "" {
+				// 空 Enter + 更新可用 → 触发自更新(仅未运行、非更新中)
+				if !m.running && m.noticeBanner != "" && !m.updating &&
+					strings.HasPrefix(m.noticeBanner, "⏎") {
+					return m, m.startUpdate()
+				}
 				return m, nil
 			}
 			// 输入 exit 直接退出(对齐 waveloom,不区分大小写)
@@ -431,6 +506,23 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// 补洞追加的新内容同样触发跳回提示
 			m.markNewContent()
 		}
+		return m, nil
+
+	case updateCheckMsg:
+		// 启动时后台检查:有新版本 → footer banner 提示;失败静默
+		if msg.err != "" {
+			m.noticeBanner = m.msg().UpdateFailed
+		} else if msg.info != nil {
+			m.updateCache.Set(msg.info)
+			if msg.info.UpdateAvailable {
+				m.noticeBanner = fmt.Sprintf(m.msg().UpdateAvailable, msg.info.LatestVersion)
+				m.latestVersion = msg.info.LatestVersion
+			}
+		}
+		return m, nil
+
+	case updateDoneMsg:
+		m.handleUpdateDone(msg)
 		return m, nil
 	}
 

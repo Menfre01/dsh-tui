@@ -232,9 +232,11 @@ type model struct {
 	inPlanMode     bool // plan 模式标记(预留;dsh 无 plan 语义)
 	todoExpanded   bool // todo 面板展开
 	todoFocused    bool // todo 面板聚焦
-	noticeBanner   string // 版本更新提示(预留)
+	noticeBanner   string // 版本更新提示(⏎ update / updating / ✓ installed)
 	updating       bool
 	updateTick     int
+	latestVersion  string // 最新 release 版本(触发更新用)
+	updateCache    UpdateCache // 更新检查结果缓存(Init 异步检查写入)
 	lastPromptTokens int  // ctx bar 实时值(压力)
 	projectedTokens  int  // ctx bar 优先值(web 语义:projectedTokens ?? pressureTokens)
 	contextLimit   int    // 上下文窗口 token 上限
