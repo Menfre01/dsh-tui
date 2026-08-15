@@ -31,3 +31,37 @@ spike:
 
 clean:
 	rm -rf bin
+
+# ---------------------------------------------------------------------------
+# 发布:交叉编译 3 平台 × 2 架构,打包 tar.gz/zip + checksums.txt
+# 产物在 dist/(配合 install.sh / install.ps1 使用)
+# ---------------------------------------------------------------------------
+
+GOOSES   = linux darwin windows
+GOARCHES = amd64 arm64
+BINARY   = dsh-tui
+DIST_DIR = dist
+LDFLAGS  = -s -w
+
+.PHONY: release
+release:
+	@rm -rf $(DIST_DIR)
+	@mkdir -p $(DIST_DIR)
+	@for GOOS in $(GOOSES); do \
+		for GOARCH in $(GOARCHES); do \
+			echo "→ Building $$GOOS/$$GOARCH ..."; \
+			GOOS=$$GOOS GOARCH=$$GOARCH CGO_ENABLED=0 \
+				$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY) ./cmd/dsh-tui; \
+			if [ "$$GOOS" = "windows" ]; then \
+				mv $(DIST_DIR)/$(BINARY) $(DIST_DIR)/$(BINARY).exe; \
+				cd $(DIST_DIR) && zip $(BINARY)_$${GOOS}_$${GOARCH}.zip $(BINARY).exe && rm $(BINARY).exe; \
+				cd $(CURDIR); \
+			else \
+				tar -czf $(DIST_DIR)/$(BINARY)_$${GOOS}_$${GOARCH}.tar.gz \
+					-C $(DIST_DIR) $(BINARY); \
+				rm $(DIST_DIR)/$(BINARY); \
+			fi; \
+		done; \
+	done
+	@cd $(DIST_DIR) && shasum -a 256 *.tar.gz *.zip > checksums.txt
+	@echo "Done → $(DIST_DIR)/"

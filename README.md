@@ -6,6 +6,33 @@
 **纯客户端架构**:dsh-tui 通过 HTTP/WS 连接 dsh 宿主进程,与宿主完全分离——
 宿主用 `dsh web` 常驻,web UI 与任意多个 dsh-tui 窗口共享同一实例。
 
+## 安装
+
+### 一键安装脚本
+
+```bash
+# macOS / Linux(安装到 ~/.local/bin)
+curl -fsSL https://raw.githubusercontent.com/Menfre01/dsh-tui/main/install.sh | sh
+
+# Windows(PowerShell)
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+脚本自动检测 OS/架构,从 GitHub Releases 下载对应包,校验 SHA256(Windows),
+并处理 PATH。
+
+### 手动安装
+
+从 [Releases](https://github.com/Menfre01/dsh-tui/releases) 下载对应平台的
+`dsh-tui_<os>_<arch>.tar.gz`(unix)/`.zip`(windows),解压后将二进制放入 PATH。
+
+### 从源码构建
+
+```bash
+make build      # 当前平台
+make release    # 交叉编译 3 平台 × 2 架构 → dist/(含 checksums.txt)
+```
+
 ## 快速开始
 
 ```bash
