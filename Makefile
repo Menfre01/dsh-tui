@@ -11,10 +11,18 @@ export GOCACHE := $(CURDIR)/.gocache
 GOFLAGS := -buildvcs=false
 LDFLAGS := -s -w -X github.com/Menfre01/dsh-tui/internal/tui.Version=$(VERSION)
 
-.PHONY: build test vet lint run dump spike clean
+.PHONY: build test vet lint install run dump spike clean
+
+# 安装到 ~/.local/bin(与 install.sh 目标一致);可覆盖: make install PREFIX=~/bin
+PREFIX ?= $(HOME)/.local/bin
 
 build:
 	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/dsh-tui ./cmd/dsh-tui
+
+install: build
+	mkdir -p $(PREFIX)
+	cp bin/dsh-tui $(PREFIX)/dsh-tui
+	@echo "installed to $(PREFIX)/dsh-tui"
 
 test:
 	$(GO) test $(GOFLAGS) ./...
