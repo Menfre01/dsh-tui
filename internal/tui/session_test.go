@@ -549,17 +549,18 @@ func TestSessionListNoCwd(t *testing.T) {
 		}
 		return b.String()
 	}
-	// 不显示 cwd
+	// 条目行(title 行)不显示 cwd;cwd 只出现在选中项第二行
 	for _, row := range rows {
-		if strings.Contains(strip(row), "very/long/workspace") {
-			t.Fatalf("列表不应显示 cwd: %q", strip(row))
+		content := strip(row)
+		if strings.Contains(content, "very/long/workspace") && strings.Contains(content, "这是一个") {
+			t.Fatalf("条目行不应显示 cwd: %q", content)
 		}
 	}
 	// title 与短 id 在同一行(未换行)
 	found := false
 	for _, row := range rows {
 		content := strip(row)
-		if strings.Contains(content, "aaaa1111") && !strings.Contains(content, "id:") {
+		if strings.Contains(content, "aaaa1111") && !strings.Contains(content, "very/long/workspace") {
 			if !strings.Contains(content, "这是一个") {
 				t.Fatalf("title 与短 id 不在同一行(被换行): %q", content)
 			}
@@ -568,5 +569,18 @@ func TestSessionListNoCwd(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("短 id 未出现在输出: %q", out)
+	}
+	// 选中项下方第二行显示工作目录(而非完整 id)
+	detailRow := ""
+	for _, row := range rows {
+		if strings.Contains(strip(row), "very/long/workspace") {
+			detailRow = strip(row)
+		}
+	}
+	if !strings.Contains(detailRow, "/very/long/workspace/path/example") {
+		t.Fatalf("选中项第二行应显示 cwd: %q", detailRow)
+	}
+	if strings.Contains(detailRow, "id:") {
+		t.Fatalf("第二行不应显示 id 前缀: %q", detailRow)
 	}
 }

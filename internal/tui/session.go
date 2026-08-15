@@ -185,9 +185,16 @@ func (m *model) renderSessionListOverlay(boxWidth int) string {
 			}
 			lines = append(lines, line)
 			if i == m.sessionListIdx {
-				// 选中项下方显示完整 id
+				// 选中项下方显示工作目录(有 cwd 时;无则回退完整 id)
+				detail := vis[i].Cwd
+				if detail == "" {
+					detail = vis[i].SessionID
+				}
+				if displayWidth(detail) > boxWidth-10 {
+					detail = truncateByDisplayWidth(detail, boxWidth-12)
+				}
 				lines = append(lines, styleOverlayBody.Render(
-					lipgloss.NewStyle().Foreground(colorMuted).Render("   id: " + vis[i].SessionID)))
+					lipgloss.NewStyle().Foreground(colorMuted).Render("   " + detail)))
 			}
 			// 条目间留空行:列表更疏朗(选中项后接 id 行再留空)
 			if i != end-1 {
