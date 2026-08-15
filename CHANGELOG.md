@@ -35,3 +35,7 @@
 - 审批/提问应答协议对齐(提问取消走 RPC error `cancelled`)
 - 输入框光标定位(QueueDock/overlay 偏移、长文本换行)
 - HUD 死字段(Loop/M/elap/ctx 恒 0 或 `--`)
+
+---
+
+📝 [Changelog (English)](https://github.com/Menfre01/dsh-tui/blob/main/CHANGELOG.en.md)
