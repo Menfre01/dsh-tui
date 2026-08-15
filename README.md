@@ -30,7 +30,7 @@ UI plus any number of dsh-tui windows share the same instance.
 curl -fsSL https://raw.githubusercontent.com/Menfre01/dsh-tui/main/install.sh | sh
 
 # Windows (PowerShell)
-powershell -ExecutionPolicy Bypass -File install.ps1
+powershell -ExecutionPolicy Bypass -Command "iex (iwr -UseBasicParsing https://raw.githubusercontent.com/Menfre01/dsh-tui/main/install.ps1)"
 ```
 
 The script detects OS/architecture, downloads the matching package from GitHub
@@ -80,7 +80,7 @@ dsh web                          # terminal 1
 | Ctrl+C | Quit |
 | Ctrl+E / End | Jump to bottom |
 | PgUp / PgDn | Page up/down |
-| ↑/↓ / mouse wheel | Scroll |
+| ↑/↓ / mouse wheel | Scroll (text selection: **Shift+Click**, terminal standard) |
 | Esc | Interrupt current turn (session.cancel) |
 
 ### Input box

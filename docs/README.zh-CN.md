@@ -22,7 +22,7 @@
 curl -fsSL https://raw.githubusercontent.com/Menfre01/dsh-tui/main/install.sh | sh
 
 # Windows(PowerShell)
-powershell -ExecutionPolicy Bypass -File install.ps1
+powershell -ExecutionPolicy Bypass -Command "iex (iwr -UseBasicParsing https://raw.githubusercontent.com/Menfre01/dsh-tui/main/install.ps1)"
 ```
 
 脚本自动检测 OS/架构,从 GitHub Releases 下载对应包,校验 SHA256(Windows),
@@ -71,7 +71,7 @@ dsh web                          # 终端 1
 | Ctrl+C | 退出 |
 | Ctrl+E / End | 跳到底部 |
 | PgUp / PgDn | 翻页 |
-| ↑/↓ / 滚轮 | 滚动 |
+| ↑/↓ / 滚轮 | 滚动(选中文本请用 **Shift+点击**,终端标准惯例) |
 | Esc | 中断当前回合(session.cancel) |
 
 ### 输入框
