@@ -70,6 +70,17 @@ try {
     Remove-Item -Recurse -Force $TmpDir -ErrorAction SilentlyContinue
 }
 
+# Add to User PATH (persists across sessions)
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if ($userPath -notlike "*$InstallDir*") {
+    $newPath = if ($userPath) { "$InstallDir;$userPath" } else { $InstallDir }
+    [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+    Write-Host "v  Added $InstallDir to your User PATH."
+    Write-Host "   Open a new terminal to use dsh-tui."
+} else {
+    Write-Host "v  $InstallDir already on your User PATH."
+}
+
 Write-Host ""
 Write-Host "Next steps:"
 Write-Host "  1. Start the dsh host:          dsh web"

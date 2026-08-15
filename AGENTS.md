@@ -60,6 +60,10 @@ changelog 中无需列出。典型场景与判定方法:
 - ...
 ```
 
+---
+
+📝 [Changelog (English)](https://github.com/Menfre01/dsh-tui/blob/main/CHANGELOG.en.md)
+
 发布由 GitHub Actions 自动完成(tag push `v*` → `.github/workflows/release.yml`)。
 
 手动步骤(release workflow 之前完成):
@@ -68,14 +72,17 @@ changelog 中无需列出。典型场景与判定方法:
    `CHANGELOG.md`
 2. **核对日期** — 检查 `CHANGELOG.md` 中新版本的日期是否为当天日期
    (`date '+%Y-%m-%d'`),防止日期偏移
-3. **审查 Windows 兼容性** — 检查本次变更涉及的代码是否存在平台依赖问题:
+3. **核对英文锚点** — 检查 `CHANGELOG.md` 中新版本条目末尾是否包含英文
+   changelog 锚点(搜索 `📝 [Changelog (English)]`),确保 Release body 末尾有英文入口
+4. **审查 Windows 兼容性** — 检查本次变更涉及的代码是否存在平台依赖问题:
    - 路径拼接是否使用 `filepath.Join`,无硬编码 `/` 或 `\`
    - 文件遍历优先使用 `filepath.WalkDir` / `os.ReadDir`,无外部命令
    - 新增依赖是否声明跨平台支持
    - Git diff 中新增的 `/` 分隔符确认是 Go 导入路径(安全)而非文件系统路径
-4. **审查 README** — 检查 `README.md` 是否需要同步新功能
-5. **文档提交** — 如有文档修改,先 commit(类型 `docs`)
-6. **打 tag 并推送** — `git tag vX.Y.Z && git push origin main && git push origin vX.Y.Z`
+5. **审查 README** — 检查 `README.md`(英文主文档)与 `docs/README.zh-CN.md`
+   是否需要同步新功能
+6. **文档提交** — 如有文档修改,先 commit(类型 `docs`)
+7. **打 tag 并推送** — `git tag vX.Y.Z && git push origin main && git push origin vX.Y.Z`
 
 **Release 重发(发布后修复缺陷)**:
 

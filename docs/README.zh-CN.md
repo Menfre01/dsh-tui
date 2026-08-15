@@ -28,6 +28,12 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 脚本自动检测 OS/架构,从 GitHub Releases 下载对应包,校验 SHA256(Windows),
 并处理 PATH。
 
+### Homebrew
+
+```bash
+brew install menfre01/tap/dsh-tui
+```
+
 ### 手动安装
 
 从 [Releases](https://github.com/Menfre01/dsh-tui/releases) 下载对应平台的

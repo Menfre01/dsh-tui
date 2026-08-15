@@ -58,7 +58,7 @@ class DshTui < Formula
   end
 
   test do
-    assert_match "dsh-tui #{version}", shell_output("#{bin}/dsh-tui --version")
+    assert_match "dsh-tui v#{version}", shell_output("#{bin}/dsh-tui --version")
   end
 end
 RUBYEOF
