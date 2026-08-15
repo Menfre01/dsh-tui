@@ -58,6 +58,6 @@ summary → tag → release.yml auto-publishes (including Homebrew formula push)
 
 ## Docs
 
-- README is bilingual: `README.md` (Chinese) + `README.en.md` (English) — keep them in sync
+- README is bilingual: `README.md` (English main, with language nav) + `docs/README.zh-CN.md` (Simplified Chinese) — keep them in sync
 - CHANGELOG is bilingual: `CHANGELOG.md` + `CHANGELOG.en.md` — each version entry
   must end with the English anchor (`📝 [Changelog (English)]`)

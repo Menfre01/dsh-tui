@@ -58,6 +58,6 @@ dsh-tui/
 
 ## 文档
 
-- README 中英双语：`README.md`（中文）+ `README.en.md`（英文），修改需同步
+- README 双语：`README.md`（英文主文档，含语言导航）+ `docs/README.zh-CN.md`（简体中文），修改需同步
 - CHANGELOG 中英双语：`CHANGELOG.md` + `CHANGELOG.en.md`，每个版本条目
   末尾需含英文锚点（`📝 [Changelog (English)]`）
