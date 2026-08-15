@@ -92,7 +92,22 @@ func (m *model) renderSessionListOverlay(boxWidth int) string {
 	if len(m.sessions) == 0 {
 		lines = append(lines, styleOverlayBody.Render(lc.PickerNoResults))
 	} else {
-		for i, s := range m.sessions {
+		// 固定高度窗口:最多可见 maxSessionListVisible 项,选中项滚动跟随
+		const maxVisible = 8
+		start := 0
+		if m.sessionListIdx >= maxVisible {
+			start = m.sessionListIdx - maxVisible + 1
+		}
+		end := start + maxVisible
+		if end > len(m.sessions) {
+			end = len(m.sessions)
+		}
+		if start > 0 {
+			lines = append(lines, styleOverlayBody.Render(
+				lipgloss.NewStyle().Foreground(colorMuted).Render(fmt.Sprintf("  ↑ %d more", start))))
+		}
+		for i := start; i < end; i++ {
+			s := m.sessions[i]
 			marker := "  "
 			if i == m.sessionListIdx {
 				marker = "› "
@@ -119,11 +134,15 @@ func (m *model) renderSessionListOverlay(boxWidth int) string {
 				line = styleOverlayBody.Bold(true).Render(line)
 			}
 			lines = append(lines, line)
-			if i == m.sessionListIdx && m.sessionListIdx < len(m.sessions) {
+			if i == m.sessionListIdx {
 				// 选中项下方显示完整 id(y 复制)
 				lines = append(lines, styleOverlayBody.Render(
 					lipgloss.NewStyle().Foreground(colorMuted).Render("   id: " + m.sessions[i].SessionID)))
 			}
+		}
+		if end < len(m.sessions) {
+			lines = append(lines, styleOverlayBody.Render(
+				lipgloss.NewStyle().Foreground(colorMuted).Render(fmt.Sprintf("  ↓ %d more", len(m.sessions)-end))))
 		}
 	}
 

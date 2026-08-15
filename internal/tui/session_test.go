@@ -241,3 +241,41 @@ func TestSessionListShowsTitle(t *testing.T) {
 		t.Fatalf("无 title 会话应显示短 id: %q", out)
 	}
 }
+
+// TestSessionListWindow 验证会话列表固定高度窗口:超 8 个时滚动跟随 + more 提示。
+func TestSessionListWindow(t *testing.T) {
+	m := NewModel(ModelConfig{Theme: "dark"})
+	_ = m.Init()
+	m.sessions = make([]SessionBrief, 12)
+	for i := range m.sessions {
+		m.sessions[i] = SessionBrief{
+			SessionID: "session-00000000-0000-0000-0000-0000000000" + fmt.Sprintf("%02d", i),
+			Cwd:       "/w",
+			Title:     fmt.Sprintf("sess %d", i),
+		}
+	}
+	m.width = 80
+
+	// 选中第 0 项:窗口 0..7,显示 ↓ 4 more,无 ↑
+	m.sessionListIdx = 0
+	out := m.renderSessionListOverlay(70)
+	if strings.Contains(out, "↑") {
+		t.Fatalf("idx=0 不应有 ↑ more: %q", out)
+	}
+	if !strings.Contains(out, "↓ 4 more") {
+		t.Fatalf("应显示 ↓ 4 more: %q", out)
+	}
+	if !strings.Contains(out, "sess 7") || strings.Contains(out, "sess 8") {
+		t.Fatalf("窗口应为 0..7: %q", out)
+	}
+
+	// 选中第 11 项:窗口 4..11,显示 ↑ 4 more
+	m.sessionListIdx = 11
+	out = m.renderSessionListOverlay(70)
+	if !strings.Contains(out, "↑ 4 more") {
+		t.Fatalf("应显示 ↑ 4 more: %q", out)
+	}
+	if !strings.Contains(out, "sess 4") || !strings.Contains(out, "sess 11") {
+		t.Fatalf("窗口应为 4..11: %q", out)
+	}
+}
