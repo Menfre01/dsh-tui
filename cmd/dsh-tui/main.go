@@ -135,9 +135,10 @@ func main() {
 		host := dsh.NewDownlink(*url, "/api/events.host")
 		mux.OnFrame = func(f dsh.ServerRequest) { m.SendFrame(f) }
 		host.OnFrame = func(f dsh.ServerRequest) {
-			// host 帧:会话生命周期增量 → 投影器维护会话列表
+			// host 帧:会话生命周期增量 → 经 tea 事件循环投递,
+			// 由 DshFrameMsg 在事件循环内调用 ReplayHostFrame
+			// (避免在 downlink goroutine 直接改 model 状态引发 data race)
 			m.SendFrame(f)
-			projector.ReplayHostFrame(f)
 		}
 		mux.OnError = func(err error) {
 			m.SendFrame(dsh.ServerRequest{Method: "stream/error", Payload: mustJSON(map[string]any{"type": "stream/error", "error": map[string]any{"code": "internal", "message": "mux: " + err.Error(), "details": map[string]any{}}})})

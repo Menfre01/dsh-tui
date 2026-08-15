@@ -136,6 +136,31 @@ func (p *Projector) replayEvent(ev *dsh.SessionEvent, view json.RawMessage, sile
 	}
 }
 
+// ReplayAny 统一分派下行帧:mux 帧 → ReplayFrame,host 帧 → ReplayHostFrame。
+// 必须从 tea 事件循环内调用(不能从 downlink goroutine 直接改 model 状态)。
+func (p *Projector) ReplayAny(frame dsh.ServerRequest) {
+	if isHostFrame(frame) {
+		p.ReplayHostFrame(frame)
+		return
+	}
+	p.ReplayFrame(frame)
+}
+
+// isHostFrame 判断帧是否为 host 流帧(host/* 类型)。
+func isHostFrame(frame dsh.ServerRequest) bool {
+	var h dsh.HostFrame
+	if err := frame.DecodePayload(&h); err != nil || h.Type == "" {
+		return false
+	}
+	switch h.Type {
+	case dsh.HostSessionAdded, dsh.HostSessionRemoved, dsh.HostSessionStatus,
+		dsh.HostAgentError, dsh.HostWorkspaceChg, dsh.HostWorkspaceRm,
+		dsh.HostWorkspaceOrder, dsh.HostArchivedChg, dsh.HostRemoteEvent:
+		return true
+	}
+	return false
+}
+
 // ReplayFrame 处理一条 mux 下行帧(事件 + 控制帧)。
 // mux 流是全会话聚合的:必须按当前会话(sessionId)过滤,
 // 否则其他会话的事件会串进当前视图。

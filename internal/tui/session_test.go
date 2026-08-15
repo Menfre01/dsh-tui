@@ -599,3 +599,43 @@ func TestExitResumeHint(t *testing.T) {
 		t.Fatalf("en hint 异常: %q", enOut)
 	}
 }
+
+// TestReplayAnyHostRouting 验证 ReplayAny 把 host 帧路由到 ReplayHostFrame
+// (会话列表维护),mux 帧路由到 ReplayFrame(段落渲染)。
+func TestReplayAnyHostRouting(t *testing.T) {
+	m := NewModel(ModelConfig{Theme: "dark"})
+	_ = m.Init()
+	p := NewProjector(m)
+	m.AttachProjector(p)
+
+	// host/session-added → 进会话列表
+	hostFrame := dsh.ServerRequest{
+		Method: "host/session-added",
+		Payload: mustJSON(map[string]any{
+			"type": "host/session-added", "sessionId": "sess-routing", "blank": true,
+		}),
+	}
+	p.ReplayAny(hostFrame)
+	if len(m.sessions) != 1 || m.sessions[0].SessionID != "sess-routing" {
+		t.Fatalf("host 帧应维护会话列表: %+v", m.sessions)
+	}
+
+	// mux 帧 → 段落(构造一个 user/message 事件)
+	p.SessionID = "sess-1"
+	muxFrame := dsh.ServerRequest{
+		Method: "session/event",
+		Payload: mustJSON(map[string]any{
+			"type": "session/event", "sessionId": "sess-1",
+			"event": map[string]any{
+				"type": "user/message", "seq": 1, "time": 1700000000000,
+				"data": map[string]any{
+					"role": "user", "content": []map[string]any{{"type": "text", "text": "hi"}},
+				},
+			},
+		}),
+	}
+	p.ReplayAny(muxFrame)
+	if len(m.paras) == 0 {
+		t.Fatal("mux 帧应产生段落")
+	}
+}

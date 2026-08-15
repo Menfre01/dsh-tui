@@ -423,7 +423,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case DshFrameMsg:
 		if m.projector != nil {
-			m.projector.ReplayFrame(msg.Frame)
+			// 统一分派:mux 帧 → ReplayFrame;host 帧 → ReplayHostFrame。
+			// host 帧由 downlink goroutine 投递,在事件循环内处理,
+			// 避免并发修改 model 状态(data race 会卡住 tea 渲染)。
+			m.projector.ReplayAny(msg.Frame)
 		}
 		// 新下行帧(流式增量/tool 事件等)到达:用户不在底部时显示跳回提示
 		m.markNewContent()
