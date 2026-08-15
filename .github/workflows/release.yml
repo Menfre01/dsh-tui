@@ -23,6 +23,13 @@ jobs:
       - name: Build release artifacts
         run: make release
 
+      # 安装脚本随 release 资产发布:install.sh / install.ps1 复制到 dist
+      # 后与产物一起上传,支持 `curl .../download/install.sh | bash` 一键安装。
+      - name: Stage install scripts
+        run: |
+          cp install.sh install.ps1 dist/
+          chmod +x dist/install.sh
+
       - name: Extract changelog for version
         run: |
           awk -v ver="${{ github.ref_name }}" '
