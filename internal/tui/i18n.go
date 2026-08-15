@@ -48,12 +48,6 @@ type Messages struct {
 	SysNewSessionCreated string
 	SysSkillActivated    string // 含 %s
 	SysSkillLoadFailed   string // 含 %s, %s
-	SysSendFailed        string // 含 %v
-	SysCancelFailed      string // 含 %v
-	SysRespondFailed     string // 含 %v
-	SysSwitchFailed      string // 含 %v
-	SysModelListFailed   string // 含 %v
-	SysGapReplayFailed   string // 含 %v
 
 	// ── Loop done ─────────────────────────────────────────
 	LoopCompleted   string // 含 %s, %s, %s
@@ -211,12 +205,6 @@ var zhCN = Messages{
 	SysCommandFailed:     "命令执行失败: %v",
 	SysSkillActivated:    "已激活 Skills: %s",
 	SysSkillLoadFailed:   "Skill 加载失败: %s — %s",
-	SysSendFailed:        "发送失败: %v",
-	SysCancelFailed:      "中断失败: %v",
-	SysRespondFailed:     "应答失败: %v",
-	SysSwitchFailed:      "会话切换失败: %v",
-	SysModelListFailed:   "模型列表获取失败: %v",
-	SysGapReplayFailed:   "补洞回放失败: %v",
 
 	// Loop
 	LoopCompleted:   "完成（%s, ↑%s, ↓%s）",
@@ -364,12 +352,6 @@ var enUS = Messages{
 	SysCommandFailed:     "Command failed: %v",
 	SysSkillActivated:    "Skills activated: %s",
 	SysSkillLoadFailed:   "Skill load failed: %s — %s",
-	SysSendFailed:        "Send failed: %v",
-	SysCancelFailed:      "Cancel failed: %v",
-	SysRespondFailed:     "Respond failed: %v",
-	SysSwitchFailed:      "Session switch failed: %v",
-	SysModelListFailed:   "Failed to fetch model list: %v",
-	SysGapReplayFailed:   "Gap replay failed: %v",
 
 	// Loop
 	LoopCompleted:   "Done (%s, ↑%s, ↓%s)",

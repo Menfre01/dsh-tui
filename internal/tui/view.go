@@ -356,23 +356,23 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case dshPromptDoneMsg:
 		if msg.err != nil {
-			m.appendSystem(fmt.Sprintf(m.msg().SysSendFailed, msg.err), notifError)
+			m.appendSystem("send failed: "+msg.err.Error(), notifError)
 		}
 		return m, nil
 
 	case dshCancelDoneMsg:
 		if msg.err != nil {
-			m.appendSystem(fmt.Sprintf(m.msg().SysCancelFailed, msg.err), notifError)
+			m.appendSystem("cancel failed: "+msg.err.Error(), notifError)
 		}
 		return m, nil
 
 	case approvalRespondErrMsg:
-		m.appendSystem(fmt.Sprintf(m.msg().SysRespondFailed, msg.err), notifError)
+		m.appendSystem("respond failed: "+msg.err.Error(), notifError)
 		return m, nil
 
 	case dshSwitchDoneMsg:
 		if msg.err != nil {
-			m.appendSystem(fmt.Sprintf(m.msg().SysSwitchFailed, msg.err), notifError)
+			m.appendSystem("session switch failed: "+msg.err.Error(), notifError)
 			return m, nil
 		}
 		// 清空旧会话渲染 → 重置投影器 → 回放新会话历史
@@ -407,7 +407,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case modelsLoadedMsg:
 		if msg.err != nil {
-			m.appendSystem(fmt.Sprintf(m.msg().SysModelListFailed, msg.err), notifError)
+			m.appendSystem("model list failed: "+msg.err.Error(), notifError)
 		} else if len(msg.models) > 0 {
 			m.modelPickerItems = msg.models
 			if m.overlay == overlayModelPicker {
@@ -425,7 +425,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case gapEventsMsg:
 		if msg.err != nil {
-			m.appendSystem(fmt.Sprintf(m.msg().SysGapReplayFailed, msg.err), notifWarn)
+			m.appendSystem("gap replay failed: "+msg.err.Error(), notifWarn)
 		} else if len(msg.events) > 0 {
 			m.ReplayHistory(msg.events)
 			// 补洞追加的新内容同样触发跳回提示
