@@ -95,10 +95,9 @@ func (m *model) SetSessions(sessions []SessionBrief) {
 	}
 }
 
-// SetSessionCallbacks 注入会话切换/新建回调。
-func (m *model) SetSessionCallbacks(onSwitch func(sessionID string), onNew func()) {
+// SetSessionCallbacks 注入会话切换回调。
+func (m *model) SetSessionCallbacks(onSwitch func(sessionID string)) {
 	m.onSwitchSession = onSwitch
-	m.onNewSession = onNew
 }
 
 // SetRunning 更新运行状态(HUD 显示与 Enter 键可用性)。

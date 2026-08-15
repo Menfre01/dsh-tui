@@ -261,7 +261,6 @@ type model struct {
 	sessions       []SessionBrief // 会话列表(main 拉取 + host/ 帧增量)
 	sessionListIdx int            // 会话列表选中索引
 	onSwitchSession func(sessionID string) // main 注入:切换会话
-	onNewSession    func()                // main 注入:新建会话
 }
 
 // SessionBrief 是会话列表条目。

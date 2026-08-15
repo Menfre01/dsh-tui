@@ -2,7 +2,9 @@ package tui
 
 import (
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -10,10 +12,14 @@ import (
 )
 
 // fakeResponder 记录应答调用,不真正发网络请求。
+// 生产路径 respondApproval/respondQuestion 走 goroutine,记录需加锁;
+// notify 供测试确定性等待异步应答(缓冲 1,非阻塞)。
 type fakeResponder struct {
+	mu        sync.Mutex
 	approvals []approvalCall
 	questions []questionCall
 	cancels   []string // 取消的 rpcID
+	notify    chan struct{}
 }
 
 type approvalCall struct {
@@ -26,19 +32,53 @@ type questionCall struct {
 	answers          []dsh.QuestionAnswer
 }
 
+func (f *fakeResponder) signal() {
+	if f.notify == nil {
+		return
+	}
+	select {
+	case f.notify <- struct{}{}:
+	default:
+	}
+}
+
 func (f *fakeResponder) RespondApproval(rpcID, sessionID, approvalID string, allowed bool) error {
+	f.mu.Lock()
 	f.approvals = append(f.approvals, approvalCall{rpcID, sessionID, approvalID, allowed})
+	f.mu.Unlock()
+	f.signal()
 	return nil
 }
 
 func (f *fakeResponder) RespondQuestionCancel(rpcID string) error {
+	f.mu.Lock()
 	f.cancels = append(f.cancels, rpcID)
+	f.mu.Unlock()
+	f.signal()
 	return nil
 }
 
 func (f *fakeResponder) RespondQuestion(rpcID, sessionID string, answers []dsh.QuestionAnswer) error {
+	f.mu.Lock()
 	f.questions = append(f.questions, questionCall{rpcID, sessionID, answers})
+	f.mu.Unlock()
+	f.signal()
 	return nil
+}
+
+// waitRespond 等待一次异步应答(respondApproval/respondQuestion 走 goroutine)。
+func (f *fakeResponder) waitRespond(t *testing.T) {
+	t.Helper()
+	select {
+	case <-f.notify:
+	case <-time.After(2 * time.Second):
+		t.Fatal("异步应答超时")
+	}
+}
+
+// newFakeResponder 构造带异步通知的应答记录器。
+func newFakeResponder() *fakeResponder {
+	return &fakeResponder{notify: make(chan struct{}, 1)}
 }
 
 func keyPress(s string) tea.KeyPressMsg {
@@ -106,7 +146,7 @@ func TestHandleApprovalKeyDeny(t *testing.T) {
 
 // TestQuestionArrowSelectAndSubmit 验证 ↑↓ 移动光标 + Enter 确认提交。
 func TestQuestionArrowSelectAndSubmit(t *testing.T) {
-	f := &fakeResponder{}
+	f := newFakeResponder()
 	m := NewModel(ModelConfig{Theme: "dark"})
 	_ = m.Init()
 	m.responder = f
@@ -131,8 +171,8 @@ func TestQuestionArrowSelectAndSubmit(t *testing.T) {
 		t.Fatalf("cursor = %d, want 1", pq.cursor)
 	}
 	m.handleQuestionKey(tea.KeyPressMsg{Code: tea.KeyEnter})
-	// respondQuestion 走 goroutine;测试同步执行应答调用
-	m.doRespondQuestion(pq.RpcID, pq.SessionID, collectAnswers(pq))
+	// respondQuestion 走 goroutine;确定性等待异步应答完成
+	f.waitRespond(t)
 
 	if len(f.questions) != 1 {
 		t.Fatalf("questions = %d, want 1", len(f.questions))
@@ -169,7 +209,7 @@ func TestRespondQuestionClosesOverlay(t *testing.T) {
 }
 
 func TestQuestionCancelSendsEmpty(t *testing.T) {
-	f := &fakeResponder{}
+	f := newFakeResponder()
 	m := NewModel(ModelConfig{Theme: "dark"})
 	_ = m.Init()
 	m.responder = f
@@ -183,8 +223,9 @@ func TestQuestionCancelSendsEmpty(t *testing.T) {
 	}
 	m.pendingQuestion = pq
 	m.respondQuestion(pq, true) // cancelled
-	// 取消走 RPC error 通道(code "cancelled"),不 send 值批次
-	m.doCancelQuestion(pq.RpcID)
+	// 取消走 RPC error 通道(code "cancelled"),不 send 值批次;
+	// doCancelQuestion 走 goroutine,确定性等待完成
+	f.waitRespond(t)
 	if len(f.cancels) != 1 {
 		t.Fatalf("cancelled 应走取消通道: %+v", f.cancels)
 	}
@@ -225,7 +266,7 @@ func TestQuestionOverlayTitle(t *testing.T) {
 // TestQuestionOtherCustom 验证 Other 自定义答案流程:
 // ↓ 到 Other 行 → Enter 进入输入 → 输入文本 → Enter 提交 custom。
 func TestQuestionOtherCustom(t *testing.T) {
-	f := &fakeResponder{}
+	f := newFakeResponder()
 	m := NewModel(ModelConfig{Theme: "dark"})
 	_ = m.Init()
 	m.responder = f
@@ -258,12 +299,12 @@ func TestQuestionOtherCustom(t *testing.T) {
 	if got := m.otherInput.Value(); got != "xy" {
 		t.Fatalf("otherInput = %q, want xy", got)
 	}
-	// Enter 提交 → 批次应答含 Custom
+	// Enter 提交 → 批次应答含 Custom(异步 goroutine,确定性等待)
 	m.handleQuestionKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.pendingQuestion != nil {
 		t.Fatal("提交后覆盖层应关闭")
 	}
-	m.doRespondQuestion(pq.RpcID, pq.SessionID, collectAnswers(pq))
+	f.waitRespond(t)
 	if len(f.questions) != 1 {
 		t.Fatalf("questions = %d", len(f.questions))
 	}
@@ -350,7 +391,7 @@ func TestQuestionEscFromOther(t *testing.T) {
 // TestApprovalArrowSelection 验证审批框 ↑↓ 选择 + Enter 确认:
 // 默认 allow,↓ 切 deny,Enter 提交对应决策。
 func TestApprovalArrowSelection(t *testing.T) {
-	f := &fakeResponder{}
+	f := newFakeResponder()
 	m := NewModel(ModelConfig{Theme: "dark"})
 	_ = m.Init()
 	m.responder = f
@@ -358,9 +399,9 @@ func TestApprovalArrowSelection(t *testing.T) {
 	m.pendingApproval = pa
 	m.overlay = overlayPermission
 
-	// 默认 allow:Enter → 允许
+	// 默认 allow:Enter → 允许(异步 goroutine,确定性等待)
 	m.handleApprovalKey(tea.KeyPressMsg{Code: tea.KeyEnter})
-	m.doRespondApproval(pa, true)
+	f.waitRespond(t)
 	if len(f.approvals) != 1 || !f.approvals[0].allowed {
 		t.Fatalf("默认应 allow: %+v", f.approvals)
 	}
@@ -373,7 +414,7 @@ func TestApprovalArrowSelection(t *testing.T) {
 		t.Fatalf("cursor = %d, want 1", pa2.cursor)
 	}
 	m.handleApprovalKey(tea.KeyPressMsg{Code: tea.KeyEnter})
-	m.doRespondApproval(pa2, false)
+	f.waitRespond(t)
 	last := f.approvals[len(f.approvals)-1]
 	if last.allowed {
 		t.Fatal("↓ 后 Enter 应拒绝")
@@ -383,7 +424,7 @@ func TestApprovalArrowSelection(t *testing.T) {
 	m.pendingApproval = pa3
 	m.overlay = overlayPermission
 	m.handleApprovalKey(tea.KeyPressMsg{Code: tea.KeyEsc})
-	m.doRespondApproval(pa3, false)
+	f.waitRespond(t)
 	last = f.approvals[len(f.approvals)-1]
 	if last.allowed {
 		t.Fatal("Esc 应拒绝")

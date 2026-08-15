@@ -57,7 +57,7 @@ dsh web                          # 终端 1
 
 # TUI 客户端(任意目录,可多开)
 ./bin/dsh-tui                    # 新建 session
-./bin/dsh-tui --resume <id>      # 恢复已有 session(Ctrl+S 列表里 Y 复制完整 id)
+./bin/dsh-tui --resume <id>      # 恢复已有 session(空闲时按 ← 打开会话列表)
 ./bin/dsh-tui --url http://192.168.x.x:3080   # 连接远程宿主
 ./bin/dsh-tui --locale zh-CN     # 指定语言(auto 时跟随宿主 locale.preference)
 ```
@@ -97,7 +97,8 @@ dsh web                          # 终端 1
 
 | 按键 | 功能 |
 |---|---|
-| Ctrl+S | 会话列表:↑↓ 导航 · Enter 切换 · N 新建 · **Y 复制完整 id** · Esc 取消 |
+| `←`(空闲且输入为空) | 会话列表:↑↓ 导航 · Enter 切换 · Esc 取消 |
+| Ctrl+S | 会话列表(兼容入口;部分终端 Ctrl+S 被 XOFF 截获) |
 | Ctrl+G | 主题:↑↓ 选 auto/dark/light/colorblind · Enter 应用 · Esc 关闭(auto 同步重查终端背景,5s 轮询跟随) |
 | Ctrl+M | 模型:↑↓ 选模型 · Enter 选择(带默认 effort) · **E 进 effort 面板** · Esc |
 

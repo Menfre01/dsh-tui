@@ -191,8 +191,19 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.focusPrev()
 			return m, nil
 		case "ctrl+s":
+			// 兼容入口(部分终端 Ctrl+S 被 XOFF 流控截获,主入口是空闲 ←)
 			m.toggleSessionList()
 			return m, nil
+		case "left":
+			// 空闲态 ← 打开会话列表(输入框为空时;有内容时仍是光标移动)
+			if !m.running && m.overlay == overlayNone && m.input.Value() == "" {
+				m.toggleSessionList()
+				return m, nil
+			}
+			var cmd tea.Cmd
+			m.input, cmd = m.input.Update(msg)
+			cmds = append(cmds, cmd)
+			return m, tea.Batch(cmds...)
 		case "ctrl+g":
 			m.toggleThemePicker()
 			return m, nil

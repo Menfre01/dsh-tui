@@ -481,3 +481,39 @@ func TestSessionListSpacing(t *testing.T) {
 		t.Fatalf("条目间应有空行(alpha 行 %d,beta 行 %d): %q", alphaRow, betaRow, out)
 	}
 }
+
+// TestSessionListOpenByLeft 验证空闲态 ← 打开会话列表(view 层分发):
+// 空闲(未运行、无覆盖层、输入为空)→ 打开;输入非空 → 不触发(光标移动)。
+func TestSessionListOpenByLeft(t *testing.T) {
+	left := tea.KeyPressMsg{Code: tea.KeyLeft}
+
+	m := NewModel(ModelConfig{Theme: "dark"})
+	_ = m.Init()
+	m.SetSessionInfo("session-cur", "deepseek-v4-flash")
+	m.SetSessions([]SessionBrief{{SessionID: "session-a", Cwd: "/w/a"}})
+
+	// 空闲 + 输入为空:← 打开列表
+	if m.running || m.overlay != overlayNone || m.input.Value() != "" {
+		t.Fatal("前置条件应为空闲")
+	}
+	upd, _ := m.Update(left)
+	m = upd.(*model)
+	if !m.sessionListVisible() {
+		t.Fatal("空闲态 ← 应打开会话列表")
+	}
+
+	// 列表打开时 ← 关闭(对称)
+	upd, _ = m.Update(left)
+	m = upd.(*model)
+	if m.sessionListVisible() {
+		t.Fatal("列表打开时 ← 应关闭")
+	}
+
+	// 输入非空:← 不触发(仍是输入框光标移动)
+	m.input.SetValue("hello")
+	upd, _ = m.Update(left)
+	m = upd.(*model)
+	if m.sessionListVisible() {
+		t.Fatal("输入非空时 ← 不应打开会话列表")
+	}
+}

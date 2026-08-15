@@ -93,7 +93,6 @@ type Messages struct {
 	PickerSelectProvider string
 	PickerThemeAuto    string
 	PickerSelectSession string // 会话列表标题
-	PickerNewSession   string // 会话列表新建操作
 
 	// ── File picker ──────────────────────────────────────
 	PickerScanning  string
@@ -333,7 +332,6 @@ var zhCN = Messages{
 	PickerSelectEffort: "选择档位 -",
 	PickerSelectLocale: "▲ 选择界面语言",
 	PickerSelectSession: "选择会话",
-	PickerNewSession:   "新建会话",
 	PickerSelectProvider: "▲ 选择 Provider",
 	PickerThemeAuto:    "Auto（自动检测终端背景色）",
 	PickerScanning:     "正在扫描文件...",
@@ -639,7 +637,6 @@ var enUS = Messages{
 	PickerSelectEffort: "Select effort -",
 	PickerSelectLocale: "▲ Select Language",
 	PickerSelectSession: "Select Session",
-	PickerNewSession:   "New Session",
 	PickerSelectProvider: "▲ Select Provider",
 	PickerThemeAuto:    "Auto (detect terminal background)",
 	PickerScanning:     "Scanning files...",

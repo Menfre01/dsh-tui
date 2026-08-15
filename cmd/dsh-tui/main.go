@@ -237,16 +237,6 @@ func main() {
 				m.SendSwitchDone(target, hist, err)
 			}()
 		},
-		func() {
-			// 新建会话
-			go func() {
-				created, err := client.CreateSession(context.Background(), dsh.SessionCreateRequest{Cwd: workCwd})
-				if err == nil {
-					sessionID = created.SessionID // 新建后发送目标切到新会话
-				}
-				m.SendSwitchDone(created.SessionID, nil, err)
-			}()
-		},
 	)
 	// 模型选择器:拉取 session.models → 注入;选择 → selectModel
 	m.SetModelSelectCallback(func(provider, model, effort string) {

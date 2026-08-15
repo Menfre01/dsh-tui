@@ -11,7 +11,7 @@ import (
 // ---------------------------------------------------------------------------
 // session.go — 会话列表与切换(阶段 3 MVP)
 //
-// 交互: Ctrl+S 打开/关闭会话列表覆盖层;↑/↓ 导航;Enter 切换;N 新建。
+// 交互: Ctrl+S 打开/关闭会话列表覆盖层;↑/↓ 导航;Enter 切换;Esc 取消。
 // 数据源: main 启动时 session.list + host/ 帧增量(project.go 维护)。
 // ---------------------------------------------------------------------------
 
@@ -101,6 +101,10 @@ func (m *model) handleSessionListKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 	case "ctrl+s":
 		m.toggleSessionList()
 		return true, nil
+	case "left":
+		// ← 关闭(与空闲态打开对称)
+		m.toggleSessionList()
+		return true, nil
 	case "up":
 		if m.sessionListIdx > 0 {
 			m.sessionListIdx--
@@ -119,13 +123,6 @@ func (m *model) handleSessionListKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 			if m.onSwitchSession != nil {
 				m.onSwitchSession(target)
 			}
-		}
-		return true, nil
-	case "n":
-		m.overlay = overlayNone
-		m.input.Focus()
-		if m.onNewSession != nil {
-			m.onNewSession()
 		}
 		return true, nil
 	case "esc":
@@ -208,7 +205,7 @@ func (m *model) renderSessionListOverlay(boxWidth int) string {
 
 	lines = append(lines, "")
 	lines = append(lines, styleOverlayBody.Render(
-		"[↑/↓] "+lc.KeyNav+"    [Enter] "+lc.KeyConfirm+"    [N] "+lc.PickerNewSession+"    [Esc] "+lc.KeyCancel))
+		"[↑/↓] "+lc.KeyNav+"    [Enter] "+lc.KeyConfirm+"    [Esc] "+lc.KeyCancel))
 	return renderOverlayBox(boxWidth, m.overlayAnimFrame, strings.Join(lines, "\n"))
 }
 

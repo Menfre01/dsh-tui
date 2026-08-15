@@ -66,7 +66,7 @@ dsh web                          # terminal 1
 
 # TUI client (any directory, multiple instances)
 ./bin/dsh-tui                    # new session
-./bin/dsh-tui --resume <id>      # resume a session (Ctrl+S list: Y copies the full id)
+./bin/dsh-tui --resume <id>      # resume a session (press ← while idle to open the session list)
 ./bin/dsh-tui --url http://192.168.x.x:3080   # connect to a remote host
 ./bin/dsh-tui --locale zh-CN     # force locale (auto follows host locale.preference)
 ```
@@ -106,7 +106,8 @@ dsh web                          # terminal 1
 
 | Key | Action |
 |---|---|
-| Ctrl+S | Session list: ↑↓ navigate · Enter switch · N new · **Y copy full id** · Esc close |
+| `←` (idle, empty input) | Session list: ↑↓ navigate · Enter switch · Esc close |
+| Ctrl+S | Session list (compat; some terminals eat Ctrl+S as XOFF) |
 | Ctrl+G | Theme: ↑↓ pick auto/dark/light/colorblind · Enter apply · Esc close (auto re-queries terminal background; 5s polling) |
 | Ctrl+M | Model: ↑↓ pick · Enter select (with default effort) · **E effort panel** · Esc |
 
