@@ -79,7 +79,7 @@ dsh-tui --locale zh-CN        # 指定语言(auto 时跟随宿主 locale.prefere
 进入后:
 
 - 输入消息按 **Enter** 发送
-- 空闲时按 **`←`** 打开会话列表——Enter 切换已有会话,**N** 新建。
+- 空闲时按 **`←`** 打开会话列表——Enter 切换已有会话,**Esc** 关闭。
   无需知道 session id
 - `--resume <id>` 可选:启动时直接恢复指定会话;同一批会话都能通过
   `←` 列表进入

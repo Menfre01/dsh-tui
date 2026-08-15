@@ -89,7 +89,7 @@ Once inside:
 
 - Type a message and press **Enter** to send.
 - Press **`←`** while idle to open the session list — switch to an existing
-  session with Enter, or start a new one with **N**. No need to know session ids.
+  session with Enter, or **Esc** to close. No need to know session ids.
 - `--resume <id>` is optional: it restores a specific session at startup; the
   same sessions are reachable via the `←` list.
 
