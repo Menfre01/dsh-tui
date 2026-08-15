@@ -26,8 +26,44 @@ func (m *model) toggleSessionList() {
 		m.input.Focus()
 		return
 	}
+	// 兜底清理:任何路径残留的重复项在打开列表时按 SessionID 收敛
+	// (host 帧已去重,此处防御历史进程/上游返回的重复)。
+	m.dedupeSessions()
 	m.overlay = overlaySessionList
 	m.input.Blur()
+}
+
+// dedupeSessions 按 SessionID 去重 m.sessions(保留首个出现的项),
+// 并修正 sessionListIdx 指向去重后同一会话。返回是否清理了重复。
+func (m *model) dedupeSessions() bool {
+	seen := make(map[string]int, len(m.sessions))
+	uniq := make([]SessionBrief, 0, len(m.sessions))
+	idxMap := make([]int, len(m.sessions))
+	for i, s := range m.sessions {
+		if s.SessionID == "" {
+			idxMap[i] = -1
+			continue
+		}
+		if j, ok := seen[s.SessionID]; ok {
+			// 重复:保留首个(通常字段更全),后续丢弃
+			idxMap[i] = j
+			continue
+		}
+		seen[s.SessionID] = len(uniq)
+		idxMap[i] = len(uniq)
+		uniq = append(uniq, s)
+	}
+	if len(uniq) == len(m.sessions) {
+		return false
+	}
+	cur := m.sessionListIdx
+	m.sessions = uniq
+	if cur >= 0 && cur < len(idxMap) && idxMap[cur] >= 0 {
+		m.sessionListIdx = idxMap[cur]
+	} else if m.sessionListIdx >= len(m.sessions) {
+		m.sessionListIdx = max(len(m.sessions)-1, 0)
+	}
+	return true
 }
 
 // handleSessionListKey 处理会话列表按键。返回 (handled, cmd)。

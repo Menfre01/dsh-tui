@@ -313,3 +313,66 @@ func TestSessionAddedDedup(t *testing.T) {
 		t.Fatalf("sessions = %d, want 2", len(m.sessions))
 	}
 }
+
+// TestSetSessionsDedup 验证 SetSessions 全量替换时按 SessionID 去重:
+// 即使上游 session.list 返回重复,列表也保持唯一。
+func TestSetSessionsDedup(t *testing.T) {
+	m := NewModel(ModelConfig{Theme: "dark"})
+	_ = m.Init()
+	m.SetSessions([]SessionBrief{
+		{SessionID: "session-a", Cwd: "/w/a"},
+		{SessionID: "session-b", Cwd: "/w/b"},
+		{SessionID: "session-a", Cwd: "/w/a2"}, // 重复
+		{SessionID: "session-c", Cwd: "/w/c"},
+		{SessionID: "session-b", Cwd: "/w/b2"}, // 重复
+		{SessionID: "", Cwd: "/w/empty"},       // 空 id 丢弃
+	})
+	if len(m.sessions) != 3 {
+		t.Fatalf("sessions = %d, want 3(去重)", len(m.sessions))
+	}
+	ids := map[string]bool{}
+	for _, s := range m.sessions {
+		if ids[s.SessionID] {
+			t.Fatalf("duplicate sessionId %q after SetSessions", s.SessionID)
+		}
+		ids[s.SessionID] = true
+	}
+	// 顺序保留首个出现
+	if m.sessions[0].SessionID != "session-a" || m.sessions[1].SessionID != "session-b" || m.sessions[2].SessionID != "session-c" {
+		t.Fatalf("unexpected order: %+v", m.sessions)
+	}
+}
+
+// TestDedupeSessions 验证打开列表前的兜底去重与索引修正:
+// 重复项收敛为唯一,选中索引指向去重后同一会话。
+func TestDedupeSessions(t *testing.T) {
+	m := NewModel(ModelConfig{Theme: "dark"})
+	_ = m.Init()
+	// 模拟旧进程残留:同 id 重复 3 份,选中最后一份
+	m.sessions = []SessionBrief{
+		{SessionID: "session-a", Cwd: "/w/a"},
+		{SessionID: "session-b", Cwd: "/w/b"},
+		{SessionID: "session-a", Cwd: "/w/a-dup1"},
+		{SessionID: "session-c", Cwd: "/w/c"},
+		{SessionID: "session-a", Cwd: "/w/a-dup2"},
+		{SessionID: "session-b", Cwd: "/w/b-dup"},
+	}
+	m.sessionListIdx = 4 // 指向 session-a 的第三份
+	if !m.dedupeSessions() {
+		t.Fatal("dedupeSessions 应报告清理了重复")
+	}
+	if len(m.sessions) != 3 {
+		t.Fatalf("sessions = %d, want 3", len(m.sessions))
+	}
+	if m.sessions[0].SessionID != "session-a" || m.sessions[1].SessionID != "session-b" || m.sessions[2].SessionID != "session-c" {
+		t.Fatalf("unexpected list: %+v", m.sessions)
+	}
+	// 索引 4(重复的 session-a)应收敛到去重后的 0
+	if m.sessionListIdx != 0 {
+		t.Fatalf("sessionListIdx = %d, want 0(同一会话)", m.sessionListIdx)
+	}
+	// 幂等:再次调用无变化
+	if m.dedupeSessions() {
+		t.Fatal("dedupeSessions 第二次调用不应再有清理")
+	}
+}

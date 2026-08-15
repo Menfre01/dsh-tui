@@ -78,8 +78,18 @@ func (m *model) SendGapEvents(events []HistoryEvent, err error) {
 }
 
 // SetSessions 注入会话列表(main 启动时拉取,host/ 帧增量后全量替换)。
+// 按 SessionID 去重:即使上游 session.list 本身重复,列表也保持唯一。
 func (m *model) SetSessions(sessions []SessionBrief) {
-	m.sessions = sessions
+	seen := make(map[string]bool, len(sessions))
+	uniq := make([]SessionBrief, 0, len(sessions))
+	for _, s := range sessions {
+		if s.SessionID == "" || seen[s.SessionID] {
+			continue
+		}
+		seen[s.SessionID] = true
+		uniq = append(uniq, s)
+	}
+	m.sessions = uniq
 	if m.sessionListIdx >= len(m.sessions) {
 		m.sessionListIdx = max(len(m.sessions)-1, 0)
 	}
