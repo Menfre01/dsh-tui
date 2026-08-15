@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+
+      - name: Build release artifacts
+        run: make release
+
+      - name: Extract changelog for version
+        run: |
+          awk -v ver="${{ github.ref_name }}" '
+            BEGIN { found=0 }
+            $0 ~ "^## \\[" ver "\\]" { found=1; print; next }
+            found && $0 ~ "^## \\[" { exit }
+            found { print }
+          ' CHANGELOG.md > /tmp/release-notes.md
+
+      - name: Create GitHub Release
+        run: |
+          TAG="${{ github.ref_name }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists — updating notes and assets."
+            gh release edit "$TAG" --notes-file /tmp/release-notes.md
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --title "$TAG" \
+              --notes-file /tmp/release-notes.md
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}

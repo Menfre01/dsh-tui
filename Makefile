@@ -4,15 +4,17 @@
 # 仓库 .git 目录状态特殊,构建需 -buildvcs=false。
 
 GO ?= go
+VERSION ?= $(shell git describe --tags --dirty --always 2>/dev/null || echo dev)
 export GOMODCACHE := $(CURDIR)/.modcache
 export GOPATH := $(CURDIR)/.gopath
 export GOCACHE := $(CURDIR)/.gocache
 GOFLAGS := -buildvcs=false
+LDFLAGS := -s -w -X github.com/Menfre01/dsh-tui/internal/tui.Version=$(VERSION)
 
 .PHONY: build test vet run dump spike clean
 
 build:
-	$(GO) build $(GOFLAGS) -o bin/dsh-tui ./cmd/dsh-tui
+	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/dsh-tui ./cmd/dsh-tui
 
 test:
 	$(GO) test $(GOFLAGS) ./...
@@ -41,7 +43,6 @@ GOOSES   = linux darwin windows
 GOARCHES = amd64 arm64
 BINARY   = dsh-tui
 DIST_DIR = dist
-LDFLAGS  = -s -w
 
 .PHONY: release
 release:

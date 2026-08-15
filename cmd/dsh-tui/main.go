@@ -35,8 +35,13 @@ func main() {
 		theme     = flag.String("theme", "auto", "UI theme: auto | dark | light (auto follows terminal background)")
 		maxEvents = flag.Int("history", 200, "max session.history events to replay on open")
 		dump      = flag.Bool("dump", false, "render the replayed session once and exit (no TTY needed)")
+		version   = flag.Bool("version", false, "print version and exit")
 	)
 	flag.Parse()
+	if *version {
+		fmt.Printf("dsh-tui %s\n", tui.Version)
+		return
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
